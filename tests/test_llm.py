@@ -14,6 +14,7 @@ class TestChat:
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = "Hello from LLM!"
+        mock_response.choices[0].message.tool_calls = None
         mock_completion.return_value = mock_response
 
         messages = [{"role": "user", "content": "Hi"}]
@@ -22,8 +23,8 @@ class TestChat:
         result = chat(messages, model="test-model", api_key="test-key")
 
         # Assert
-        assert result == "Hello from LLM!"
-        mock_completion.assert_called_once()
+        assert result["type"] == "text"
+        assert result["content"] == "Hello from LLM!"
 
     @patch("chatbot.llm.completion")
     def test_passes_messages_to_llm(self, mock_completion):
@@ -73,10 +74,12 @@ class TestChat:
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = None
+        mock_response.choices[0].message.tool_calls = None
         mock_completion.return_value = mock_response
 
         # Act
         result = chat([{"role": "user", "content": "Hi"}], model="test", api_key="key")
 
         # Assert
-        assert result == ""
+        assert result["type"] == "text"
+        assert result["content"] == ""

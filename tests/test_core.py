@@ -39,10 +39,10 @@ class TestChatBotSend:
 
     @patch("chatbot.core.chat")
     def test_send_returns_llm_response(self, mock_chat):
-        mock_chat.return_value = "I am a helpful assistant!"
+        mock_chat.return_value = {"type": "text", "content": "I am a helpful assistant!"}
 
         config = Config(model="test", api_key="key", base_url="http://test")
-        bot = ChatBot(config=config)
+        bot = ChatBot(config=config, enable_tools=False)
 
         response = bot.send("Hello!")
 
@@ -50,10 +50,10 @@ class TestChatBotSend:
 
     @patch("chatbot.core.chat")
     def test_send_adds_messages_to_memory(self, mock_chat):
-        mock_chat.return_value = "Response"
+        mock_chat.return_value = {"type": "text", "content": "Response"}
 
         config = Config(model="test", api_key="key", base_url="http://test")
-        bot = ChatBot(config=config)
+        bot = ChatBot(config=config, enable_tools=False)
 
         bot.send("Hello!")
 
@@ -67,10 +67,10 @@ class TestChatBotSend:
 
     @patch("chatbot.core.chat")
     def test_send_conversational_flow(self, mock_chat):
-        mock_chat.return_value = "Second response"
+        mock_chat.return_value = {"type": "text", "content": "Second response"}
 
         config = Config(model="test", api_key="key", base_url="http://test")
-        bot = ChatBot(config=config)
+        bot = ChatBot(config=config, enable_tools=False)
 
         bot.send("First message")
         bot.send("Second message")
@@ -88,13 +88,70 @@ class TestChatBotReset:
 
     @patch("chatbot.core.chat")
     def test_reset_clears_history(self, mock_chat):
-        mock_chat.return_value = "Response"
+        mock_chat.return_value = {"type": "text", "content": "Response"}
 
         config = Config(model="test", api_key="key", base_url="http://test")
-        bot = ChatBot(config=config)
+        bot = ChatBot(config=config, enable_tools=False)
 
         bot.send("Hello!")
         bot.reset()
 
         messages = bot.memory.get_messages()
         assert len(messages) == 1  # Only system prompt
+
+
+class TestChatBotWithTools:
+    """Test ChatBot with tool calling."""
+
+    @patch("chatbot.core.chat")
+    def test_executes_tool_and_returns_response(self, mock_chat):
+        # First call: LLM wants to call calculator
+        # Second call: LLM gives final response
+        mock_chat.side_effect = [
+            {
+                "type": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "call_123",
+                        "name": "calculator",
+                        "arguments": '{"expression": "2+2"}',
+                    }
+                ],
+            },
+            {"type": "text", "content": "2 + 2 = 4"},
+        ]
+
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config)
+
+        response = bot.send("What is 2+2?")
+
+        assert response == "2 + 2 = 4"
+        assert mock_chat.call_count == 2
+
+    @patch("chatbot.core.chat")
+    def test_tool_result_added_to_memory(self, mock_chat):
+        mock_chat.side_effect = [
+            {
+                "type": "tool_calls",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "name": "calculator",
+                        "arguments": '{"expression": "10*5"}',
+                    }
+                ],
+            },
+            {"type": "text", "content": "10 * 5 = 50"},
+        ]
+
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config)
+
+        bot.send("What is 10*5?")
+
+        messages = bot.memory.get_messages()
+        # system + user + tool_call_assistant + tool_result + final_assistant
+        assert len(messages) == 5
+        assert messages[2]["role"] == "assistant"  # tool call
+        assert messages[3]["role"] == "tool"  # tool result

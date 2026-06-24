@@ -19,6 +19,24 @@ class Memory:
         self.messages.append({"role": role, "content": content})
         self._trim()
 
+    def add_assistant_with_tool_calls(self, tool_calls: list[dict]) -> None:
+        """Add an assistant message that includes tool calls."""
+        self.messages.append({
+            "role": "assistant",
+            "content": "",
+            "tool_calls": tool_calls,
+        })
+        self._trim()
+
+    def add_tool_result(self, tool_call_id: str, content: str) -> None:
+        """Add a tool result message."""
+        self.messages.append({
+            "role": "tool",
+            "content": content,
+            "tool_call_id": tool_call_id,
+        })
+        self._trim()
+
     def get_messages(self) -> list[dict[str, str]]:
         """Get all messages (system + history)."""
         return self.messages.copy()
