@@ -95,10 +95,10 @@ Write tests **first**, watch them fail, then write the minimum code to make them
 - `test_core.py` — ChatBot.send() orchestrates correctly (mocked LLM)
 
 **Success criteria:**
-- [ ] All tests pass
-- [ ] User can type messages and get responses
-- [ ] Chatbot remembers conversation history
-- [ ] Can switch between providers (DeepSeek/Mimo)
+- [x] All tests pass (28 total)
+- [x] User can type messages and get responses
+- [x] Chatbot remembers conversation history
+- [x] Can switch between providers (DeepSeek/Mimo)
 
 ---
 
@@ -117,10 +117,15 @@ Write tests **first**, watch them fail, then write the minimum code to make them
 - Tool execution and result feeding
 
 **Success criteria:**
-- [ ] All tests pass
-- [ ] LLM can request tool calls
-- [ ] Tools execute and return results
-- [ ] Results are fed back to LLM
+- [x] All tests pass (50 total)
+- [x] LLM can request tool calls
+- [x] Tools execute and return results
+- [x] Results are fed back to LLM
+
+**Key learnings:**
+- OpenAI function calling format (`type: function`, `function: {name, description, parameters}`)
+- `tool_call_id` must be included when returning tool results
+- Tool calling loop needs max iterations to prevent infinite loops
 
 ---
 
