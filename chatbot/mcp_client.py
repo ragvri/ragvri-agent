@@ -99,11 +99,12 @@ class MCPClient:
 
         for tool in tools_response.tools:
             # Convert MCP tool to our Tool format
+            # Note: MCP tools don't have a local function - execution happens via execute_tool()
             our_tool = Tool(
                 name=tool.name,
                 description=tool.description or "",
                 parameters=tool.inputSchema,
-                function=lambda name=tool.name, **kwargs: None,
+                function=None,  # MCP tools execute via the server
             )
             self._tools[tool.name] = our_tool
 
