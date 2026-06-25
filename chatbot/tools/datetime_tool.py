@@ -2,6 +2,8 @@
 
 from datetime import datetime
 
+from chatbot.tool_registry import Tool
+
 
 def get_current_datetime() -> str:
     """Get the current date and time.
@@ -13,14 +15,17 @@ def get_current_datetime() -> str:
     return now.strftime("%Y-%m-%d %H:%M:%S %A")
 
 
-# Tool metadata for registration
-TOOL_DEFINITION = {
-    "name": "get_current_datetime",
-    "description": "Get the current date and time. Use when asked about today's date, current time, or what day it is.",
-    "parameters": {
+# Tool definition for registration
+datetime_tool = Tool(
+    name="get_current_datetime",
+    description=(
+        "Get the current date and time."
+        " Use when asked about today's date, current time, or what day it is."
+    ),
+    parameters={
         "type": "object",
         "properties": {},
         "required": [],
     },
-    "function": get_current_datetime,
-}
+    function=get_current_datetime,
+)

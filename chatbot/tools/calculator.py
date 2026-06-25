@@ -1,5 +1,7 @@
 """Calculator tool for evaluating math expressions."""
 
+from chatbot.tool_registry import Tool
+
 
 def calculate(expression: str) -> str:
     """Evaluate a mathematical expression.
@@ -20,11 +22,14 @@ def calculate(expression: str) -> str:
         return f"Error: {e}"
 
 
-# Tool metadata for registration
-TOOL_DEFINITION = {
-    "name": "calculator",
-    "description": "Evaluate a mathematical expression. Use for calculations like '2 + 3', '10 * 5', '(15 - 3) / 4'.",
-    "parameters": {
+# Tool definition for registration
+calculator_tool = Tool(
+    name="calculator",
+    description=(
+        "Evaluate a mathematical expression."
+        " Use for calculations like '2 + 3', '10 * 5', '(15 - 3) / 4'."
+    ),
+    parameters={
         "type": "object",
         "properties": {
             "expression": {
@@ -34,5 +39,5 @@ TOOL_DEFINITION = {
         },
         "required": ["expression"],
     },
-    "function": calculate,
-}
+    function=calculate,
+)

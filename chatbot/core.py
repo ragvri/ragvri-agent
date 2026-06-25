@@ -1,14 +1,13 @@
 """Core chat loop — where the magic happens."""
 
 import json
-from typing import Any
 
 from chatbot.config import Config
 from chatbot.llm import chat
 from chatbot.memory import Memory
 from chatbot.tool_registry import ToolRegistry
-from chatbot.tools.calculator import TOOL_DEFINITION as CALCULATOR_TOOL
-from chatbot.tools.datetime_tool import TOOL_DEFINITION as DATETIME_TOOL
+from chatbot.tools.calculator import calculator_tool
+from chatbot.tools.datetime_tool import datetime_tool
 
 
 class ChatBot:
@@ -44,8 +43,8 @@ class ChatBot:
 
     def _register_default_tools(self) -> None:
         """Register the built-in tools."""
-        self.tool_registry.register(**CALCULATOR_TOOL)
-        self.tool_registry.register(**DATETIME_TOOL)
+        self.tool_registry.register(calculator_tool)
+        self.tool_registry.register(datetime_tool)
 
     def send(self, user_message: str) -> str:
         """Process a user message and return the assistant's response.
@@ -80,7 +79,7 @@ class ChatBot:
                 # LLM wants to call tools
                 # Add the assistant's tool call message to memory
                 tool_calls = response["tool_calls"]
-                
+
                 # Format tool calls for OpenAI-compatible API
                 formatted_tool_calls = [
                     {

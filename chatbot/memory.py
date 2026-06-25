@@ -1,5 +1,7 @@
 """Conversation memory management."""
 
+from typing import Any
+
 
 class Memory:
     """Manages conversation history as an in-memory list.
@@ -12,7 +14,7 @@ class Memory:
 
     def __init__(self, system_prompt: str = "You are a helpful assistant.", max_messages: int = 50):
         self.max_messages = max_messages
-        self.messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+        self.messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 
     def add(self, role: str, content: str) -> None:
         """Add a message to history."""
@@ -21,23 +23,27 @@ class Memory:
 
     def add_assistant_with_tool_calls(self, tool_calls: list[dict]) -> None:
         """Add an assistant message that includes tool calls."""
-        self.messages.append({
-            "role": "assistant",
-            "content": "",
-            "tool_calls": tool_calls,
-        })
+        self.messages.append(
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": tool_calls,
+            }
+        )
         self._trim()
 
     def add_tool_result(self, tool_call_id: str, content: str) -> None:
         """Add a tool result message."""
-        self.messages.append({
-            "role": "tool",
-            "content": content,
-            "tool_call_id": tool_call_id,
-        })
+        self.messages.append(
+            {
+                "role": "tool",
+                "content": content,
+                "tool_call_id": tool_call_id,
+            }
+        )
         self._trim()
 
-    def get_messages(self) -> list[dict[str, str]]:
+    def get_messages(self) -> list[dict[str, Any]]:
         """Get all messages (system + history)."""
         return self.messages.copy()
 

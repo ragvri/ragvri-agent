@@ -1,6 +1,6 @@
 """Tests for core module (ChatBot)."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from chatbot.config import Config
 from chatbot.core import ChatBot

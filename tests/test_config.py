@@ -28,7 +28,11 @@ class TestConfigFromEnv:
     """Test loading config from environment variables."""
 
     def test_loads_deepseek_config(self):
-        with patch.dict(os.environ, {"DEFAULT_MODEL": "deepseek-chat", "DEEPSEEK_API_KEY": "test-key"}):
+        env = {
+            "DEFAULT_MODEL": "deepseek-chat",
+            "DEEPSEEK_API_KEY": "test-key",
+        }
+        with patch.dict(os.environ, env):
             config = Config.from_env()
             assert config.model == "deepseek-chat"
             assert config.api_key == "test-key"
@@ -53,6 +57,5 @@ class TestConfigFromEnv:
             os.environ.pop("DEEPSEEK_API_KEY", None)
             os.environ.pop("MIMO_API_KEY", None)
             # Patch load_dotenv to prevent .env file from loading
-            with patch("chatbot.config.load_dotenv"):
-                with pytest.raises(ValueError):
-                    Config.from_env()
+            with patch("chatbot.config.load_dotenv"), pytest.raises(ValueError):
+                Config.from_env()

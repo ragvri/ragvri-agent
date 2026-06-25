@@ -2,7 +2,39 @@
 
 import pytest
 
-from chatbot.tool_registry import ToolRegistry
+from chatbot.tool_registry import Tool, ToolRegistry
+
+
+class TestToolDataclass:
+    """Test the Tool dataclass."""
+
+    def test_create_tool(self):
+        tool = Tool(
+            name="test",
+            description="A test tool",
+            parameters={"type": "object", "properties": {}},
+            function=lambda: "result",
+        )
+        assert tool.name == "test"
+        assert tool.description == "A test tool"
+
+    def test_to_openai_definition(self):
+        tool = Tool(
+            name="calculator",
+            description="Calculate math",
+            parameters={
+                "type": "object",
+                "properties": {"expression": {"type": "string", "description": "Math expression"}},
+                "required": ["expression"],
+            },
+            function=lambda expression: eval(expression),
+        )
+
+        defn = tool.to_openai_definition()
+        assert defn["type"] == "function"
+        assert defn["function"]["name"] == "calculator"
+        assert defn["function"]["description"] == "Calculate math"
+        assert "expression" in defn["function"]["parameters"]["properties"]
 
 
 class TestToolRegistryInit:
@@ -22,41 +54,45 @@ class TestToolRegistryRegister:
 
     def test_register_adds_tool(self):
         registry = ToolRegistry()
-        registry.register(
+        tool = Tool(
             name="test_tool",
             description="A test tool",
             parameters={"type": "object", "properties": {}},
             function=lambda: "result",
         )
+        registry.register(tool)
         assert "test_tool" in registry.tool_names
 
     def test_register_multiple_tools(self):
         registry = ToolRegistry()
-        registry.register(
+        tool1 = Tool(
             name="tool1",
             description="First tool",
             parameters={"type": "object", "properties": {}},
             function=lambda: "1",
         )
-        registry.register(
+        tool2 = Tool(
             name="tool2",
             description="Second tool",
             parameters={"type": "object", "properties": {}},
             function=lambda: "2",
         )
+        registry.register(tool1)
+        registry.register(tool2)
         assert len(registry.tool_names) == 2
 
     def test_get_tool_returns_tool(self):
         registry = ToolRegistry()
-        registry.register(
+        tool = Tool(
             name="test_tool",
             description="A test tool",
             parameters={"type": "object", "properties": {}},
             function=lambda: "result",
         )
-        tool = registry.get_tool("test_tool")
-        assert tool is not None
-        assert tool["name"] == "test_tool"
+        registry.register(tool)
+        retrieved = registry.get_tool("test_tool")
+        assert retrieved is not None
+        assert retrieved.name == "test_tool"
 
     def test_get_tool_returns_none_for_missing(self):
         registry = ToolRegistry()
@@ -68,18 +104,17 @@ class TestToolRegistryDefinitions:
 
     def test_get_definitions_format(self):
         registry = ToolRegistry()
-        registry.register(
+        tool = Tool(
             name="calculator",
             description="Calculate math expressions",
             parameters={
                 "type": "object",
-                "properties": {
-                    "expression": {"type": "string", "description": "Math expression"}
-                },
+                "properties": {"expression": {"type": "string", "description": "Math expression"}},
                 "required": ["expression"],
             },
             function=lambda expression: eval(expression),
         )
+        registry.register(tool)
 
         definitions = registry.get_definitions()
         assert len(definitions) == 1
@@ -96,7 +131,7 @@ class TestToolRegistryExecute:
 
     def test_execute_calls_function(self):
         registry = ToolRegistry()
-        registry.register(
+        tool = Tool(
             name="add",
             description="Add two numbers",
             parameters={
@@ -109,6 +144,7 @@ class TestToolRegistryExecute:
             },
             function=lambda a, b: a + b,
         )
+        registry.register(tool)
 
         result = registry.execute("add", {"a": 2, "b": 3})
         assert result == 5
@@ -120,12 +156,13 @@ class TestToolRegistryExecute:
 
     def test_execute_with_no_args(self):
         registry = ToolRegistry()
-        registry.register(
+        tool = Tool(
             name="get_time",
             description="Get current time",
             parameters={"type": "object", "properties": {}},
             function=lambda: "2024-01-01",
         )
+        registry.register(tool)
 
         result = registry.execute("get_time", {})
         assert result == "2024-01-01"
