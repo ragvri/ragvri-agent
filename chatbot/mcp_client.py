@@ -16,6 +16,11 @@ class MCPClient:
     1. Connects to MCP servers (via stdio)
     2. Discovers available tools
     3. Makes tools available to the chatbot
+
+    Supported server types:
+    - Python scripts (.py)
+    - Node.js scripts (.js)
+    - npm packages (via npx, e.g., "@modelcontextprotocol/server-github")
     """
 
     def __init__(self) -> None:
@@ -33,23 +38,40 @@ class MCPClient:
         """Get list of available tool names."""
         return list(self._tools.keys())
 
-    async def connect_to_server(self, server_script: str) -> None:
+    async def connect_to_server(
+        self,
+        server: str,
+        env: dict[str, str] | None = None,
+    ) -> None:
         """Connect to an MCP server.
 
         Args:
-            server_script: Path to the server script (.py or .js)
+            server: Server identifier. Can be:
+                - Path to .py or .js file
+                - npm package name (starts with @ or contains /)
+            env: Optional environment variables for the server
         """
-        # Determine if Python or Node.js server
-        is_python = server_script.endswith(".py")
-        is_js = server_script.endswith(".js")
+        # Determine server type and build command
+        if server.endswith(".py"):
+            command = "python"
+            args = [server]
+        elif server.endswith(".js"):
+            command = "node"
+            args = [server]
+        elif "/" in server or server.startswith("@"):
+            # Looks like an npm package
+            command = "npx"
+            args = ["-y", server]
+        else:
+            raise ValueError(
+                f"Cannot determine server type for '{server}'. "
+                "Use .py/.js file path or npm package name."
+            )
 
-        if not (is_python or is_js):
-            raise ValueError("Server script must be a .py or .js file")
-
-        command = "python" if is_python else "node"
         server_params = StdioServerParameters(
             command=command,
-            args=[server_script],
+            args=args,
+            env=env,
         )
 
         # Connect to the server
@@ -81,16 +103,28 @@ class MCPClient:
                 name=tool.name,
                 description=tool.description or "",
                 parameters=tool.inputSchema,
-                function=lambda name=tool.name, **kwargs: self._execute_mcp_tool(name, kwargs),
+                function=lambda name=tool.name, **kwargs: None,
             )
             self._tools[tool.name] = our_tool
 
-    async def _execute_mcp_tool(self, name: str, arguments: dict[str, Any]) -> str:
-        """Execute a tool on the MCP server."""
+    async def execute_tool(self, name: str, arguments: dict[str, Any]) -> str:
+        """Execute a tool on the MCP server.
+
+        Args:
+            name: Tool name
+            arguments: Tool arguments
+
+        Returns:
+            Tool execution result as string
+        """
         if not self._session:
             raise ValueError("Not connected to MCP server")
 
+        if name not in self._tools:
+            raise ValueError(f"MCP tool '{name}' not found")
+
         result = await self._session.call_tool(name, arguments)
+
         # Extract text content from result
         if result.content:
             content = result.content[0]

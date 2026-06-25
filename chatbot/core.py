@@ -98,19 +98,17 @@ class ChatBot:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     # We're already in an async context, need to handle differently
-                    # For now, create a new event loop in a thread
                     import concurrent.futures
 
                     with concurrent.futures.ThreadPoolExecutor() as pool:
                         future = pool.submit(
-                            asyncio.run, self.mcp_client._execute_mcp_tool(name, arguments)
+                            asyncio.run,
+                            self.mcp_client.execute_tool(name, arguments),
                         )
                         result = future.result(timeout=30)
                         return str(result)
                 else:
-                    return loop.run_until_complete(
-                        self.mcp_client._execute_mcp_tool(name, arguments)
-                    )
+                    return loop.run_until_complete(self.mcp_client.execute_tool(name, arguments))
             except Exception as e:
                 return f"Error executing MCP tool: {e}"
 

@@ -82,5 +82,5 @@ class TestMCPClientWithServer:
     async def test_invalid_server_script(self):
         """Test connecting to invalid server script."""
         client = MCPClient()
-        with pytest.raises(ValueError, match="must be a .py or .js file"):
+        with pytest.raises(ValueError, match="Cannot determine server type"):
             await client.connect_to_server("invalid.txt")
