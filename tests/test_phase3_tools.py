@@ -1,0 +1,116 @@
+"""Tests for Phase 3 tools: code execution and file operations."""
+
+import os
+import tempfile
+
+from chatbot.tools.code_executor import python_executor_tool
+from chatbot.tools.file_ops import file_reader_tool, file_writer_tool
+from chatbot.tools.shell import shell_executor_tool
+
+
+class TestPythonExecutor:
+    """Test Python code execution."""
+
+    def test_basic_execution(self):
+        result = python_executor_tool.function("print(2 + 2)")
+        assert "4" in result
+
+    def test_multiline_code(self):
+        code = """
+x = 10
+y = 20
+print(x + y)
+"""
+        result = python_executor_tool.function(code)
+        assert "30" in result
+
+    def test_captures_output(self):
+        code = "print('Hello, World!')"
+        result = python_executor_tool.function(code)
+        assert "Hello, World!" in result
+
+    def test_handles_syntax_error(self):
+        result = python_executor_tool.function("def foo(")
+        assert "Error" in result or "SyntaxError" in result
+
+    def test_handles_runtime_error(self):
+        result = python_executor_tool.function("1/0")
+        assert "Error" in result
+
+    def test_returns_string(self):
+        result = python_executor_tool.function("x = 42")
+        assert isinstance(result, str)
+
+
+class TestFileReader:
+    """Test file reading."""
+
+    def test_read_existing_file(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write("Hello, World!")
+            temp_path = f.name
+
+        try:
+            result = file_reader_tool.function(temp_path)
+            assert "Hello, World!" in result
+        finally:
+            os.unlink(temp_path)
+
+    def test_read_nonexistent_file(self):
+        result = file_reader_tool.function("/nonexistent/file.txt")
+        assert "Error" in result
+
+    def test_returns_string(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write("test")
+            temp_path = f.name
+
+        try:
+            result = file_reader_tool.function(temp_path)
+            assert isinstance(result, str)
+        finally:
+            os.unlink(temp_path)
+
+
+class TestFileWriter:
+    """Test file writing."""
+
+    def test_write_new_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "test.txt")
+            file_writer_tool.function(path, "Hello, World!")
+            assert os.path.exists(path)
+            with open(path) as f:
+                assert f.read() == "Hello, World!"
+
+    def test_write_returns_success(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "test.txt")
+            result = file_writer_tool.function(path, "content")
+            assert "success" in result.lower() or "written" in result.lower()
+
+    def test_write_creates_directories(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "subdir", "test.txt")
+            file_writer_tool.function(path, "content")
+            assert os.path.exists(path)
+
+
+class TestShellExecutor:
+    """Test shell command execution."""
+
+    def test_basic_command(self):
+        result = shell_executor_tool.function("echo hello")
+        assert "hello" in result
+
+    def test_captures_stdout(self):
+        result = shell_executor_tool.function("echo 'test output'")
+        assert "test output" in result
+
+    def test_handles_error_command(self):
+        result = shell_executor_tool.function("ls /nonexistent_directory")
+        assert "Error" in result or "No such file" in result or "error" in result.lower()
+
+    def test_returns_string(self):
+        result = shell_executor_tool.function("echo test")
+        assert isinstance(result, str)

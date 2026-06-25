@@ -145,10 +145,16 @@ Write tests **first**, watch them fail, then write the minimum code to make them
 - Output capture and formatting
 
 **Success criteria:**
-- [ ] All tests pass
-- [ ] Can execute Python and return output
-- [ ] Can read and write files
-- [ ] Can run shell commands
+- [x] All tests pass (68 total)
+- [x] Can execute Python and return output
+- [x] Can read and write files
+- [x] Can run shell commands
+
+**Key learnings:**
+- Subprocess execution for code isolation
+- File operations with pathlib
+- Shell command execution with timeout
+- Error handling for all operations
 
 ---
 

@@ -7,7 +7,10 @@ from chatbot.llm import chat
 from chatbot.memory import Memory
 from chatbot.tool_registry import ToolRegistry
 from chatbot.tools.calculator import calculator_tool
+from chatbot.tools.code_executor import python_executor_tool
 from chatbot.tools.datetime_tool import datetime_tool
+from chatbot.tools.file_ops import file_reader_tool, file_writer_tool
+from chatbot.tools.shell import shell_executor_tool
 
 
 class ChatBot:
@@ -43,8 +46,17 @@ class ChatBot:
 
     def _register_default_tools(self) -> None:
         """Register the built-in tools."""
+        # Basic tools
         self.tool_registry.register(calculator_tool)
         self.tool_registry.register(datetime_tool)
+
+        # Code execution tools
+        self.tool_registry.register(python_executor_tool)
+        self.tool_registry.register(shell_executor_tool)
+
+        # File operation tools
+        self.tool_registry.register(file_reader_tool)
+        self.tool_registry.register(file_writer_tool)
 
     def send(self, user_message: str) -> str:
         """Process a user message and return the assistant's response.
