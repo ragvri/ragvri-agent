@@ -108,4 +108,46 @@ Each phase builds on the previous one, and we always have a working system.
 
 ---
 
+## 6. MCP (Model Context Protocol)
+
+MCP is a **standard protocol** for connecting tools to LLMs. Instead of building tools directly into the chatbot, we can connect to external MCP servers that provide tools.
+
+### How MCP Works
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────┐
+│   Chatbot   │ ──▶ │  MCP Client │ ──▶ │   MCP   │
+│  (our app)  │     │             │     │  Server │
+└─────────────┘     └─────────────┘     └─────────┘
+                           │                 │
+                           │  1. list_tools  │
+                           │ ──────────────▶ │
+                           │                 │
+                           │  2. tools list  │
+                           │ ◀────────────── │
+                           │                 │
+                           │  3. call_tool   │
+                           │ ──────────────▶ │
+                           │                 │
+                           │  4. result      │
+                           │ ◀────────────── │
+```
+
+### Key Insights
+
+- MCP uses **async/await** for non-blocking I/O
+- Servers communicate via **stdio** (stdin/stdout)
+- Tools are discovered via `list_tools()` endpoint
+- Tool execution returns `TextContent` objects
+- The protocol **standardizes** tool format across ecosystems
+
+### Why MCP?
+
+Instead of building every tool ourselves, we can:
+- Connect to existing MCP servers (filesystem, git, databases)
+- Share tools across different AI applications
+- Use community-built tools without modification
+
+---
+
 *Last updated: 2026-06-24*
