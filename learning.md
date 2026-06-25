@@ -78,6 +78,8 @@ Without ID: "345" and "2026-06-24" — which is which?
 With ID:    "call_abc → 345" and "call_xyz → 2026-06-24" — clear!
 ```
 
+**Key insight:** The ID is needed when the same tool is called multiple times with different arguments.
+
 ---
 
 ## 4. Test-Driven Development (TDD)
@@ -100,53 +102,11 @@ Instead of building horizontally (all config, then all memory, then all LLM), we
 Phase 1: Basic chat (working!)
 Phase 2: + Tool calling (working!)
 Phase 3: + Code/file tools (working!)
-Phase 4: + MCP integration (next)
+Phase 4: + MCP integration (working!)
 Phase 5: + Skills & polish (future)
 ```
 
 Each phase builds on the previous one, and we always have a working system.
-
----
-
-## 6. MCP (Model Context Protocol)
-
-MCP is a **standard protocol** for connecting tools to LLMs. Instead of building tools directly into the chatbot, we can connect to external MCP servers that provide tools.
-
-### How MCP Works
-
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────┐
-│   Chatbot   │ ──▶ │  MCP Client │ ──▶ │   MCP   │
-│  (our app)  │     │             │     │  Server │
-└─────────────┘     └─────────────┘     └─────────┘
-                           │                 │
-                           │  1. list_tools  │
-                           │ ──────────────▶ │
-                           │                 │
-                           │  2. tools list  │
-                           │ ◀────────────── │
-                           │                 │
-                           │  3. call_tool   │
-                           │ ──────────────▶ │
-                           │                 │
-                           │  4. result      │
-                           │ ◀────────────── │
-```
-
-### Key Insights
-
-- MCP uses **async/await** for non-blocking I/O
-- Servers communicate via **stdio** (stdin/stdout)
-- Tools are discovered via `list_tools()` endpoint
-- Tool execution returns `TextContent` objects
-- The protocol **standardizes** tool format across ecosystems
-
-### Why MCP?
-
-Instead of building every tool ourselves, we can:
-- Connect to existing MCP servers (filesystem, git, databases)
-- Share tools across different AI applications
-- Use community-built tools without modification
 
 ---
 
@@ -168,13 +128,13 @@ MCP is a **standard protocol** for connecting tools to LLMs. Instead of building
                            │  2. list_tools      │
                            │ ──────────────────▶ │
                            │                     │
-                           │  3. tools list      │
+                           │  3. [tools list]    │
                            │ ◀────────────────── │
                            │                     │
                            │  4. call_tool       │
                            │ ──────────────────▶ │
                            │                     │
-                           │  5. result          │
+                           │  5. [result]        │
                            │ ◀────────────────── │
 ```
 
@@ -187,6 +147,35 @@ MCP is a **standard protocol** for connecting tools to LLMs. Instead of building
 - The protocol **standardizes** tool format across ecosystems
 - npm packages can be MCP servers (e.g., `@modelcontextprotocol/server-github`)
 
+### MCP Tools Are Transparent to the LLM
+
+**This was a key surprise:** MCP tools get registered as local tools in our registry. The LLM doesn't know the difference — it just sees names and descriptions.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    LLM's View                            │
+│                                                         │
+│  Available tools:                                       │
+│  • calculator          (built-in)                       │
+│  • get_current_datetime (built-in)                      │
+│  • python_executor     (built-in)                       │
+│  • greet               (MCP server)     ← Looks same!  │
+│  • add                 (MCP server)     ← Looks same!  │
+└─────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│               _execute_tool()                           │
+│                                                         │
+│  if mcp_client.get_tool(name):  # Is it MCP?           │
+│      mcp_client.execute_tool()  # → External server     │
+│  else:                                                  │
+│      tool_registry.execute()    # → Local function      │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Key insight:** The routing to external servers happens transparently in `_execute_tool()`. The LLM just sees tools — it doesn't care where they run.
+
 ### When to Use MCP vs Built-in Tools
 
 | Use MCP When | Use Built-in When |
@@ -194,14 +183,6 @@ MCP is a **standard protocol** for connecting tools to LLMs. Instead of building
 | External services (GitHub, Slack, Jira) | Simple operations (file read, calc) |
 | Sharing tools across apps | Self-contained functionality |
 | Community tools available | Performance critical |
-
-### Real MCP Servers
-
-| Server | Tools | Auth Required |
-|--------|-------|---------------|
-| `@modelcontextprotocol/server-everything` | Test/demo tools | No |
-| `@modelcontextprotocol/server-github` | GitHub API | Yes (token) |
-| `@modelcontextprotocol/server-filesystem` | File operations | No |
 
 ---
 
