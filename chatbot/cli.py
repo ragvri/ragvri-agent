@@ -18,20 +18,22 @@ BANNER = """
 [dim]  /reset   - Clear conversation history[/dim]
 [dim]  /clear   - Clear the screen[/dim]
 [dim]  /tools   - List available tools[/dim]
-[dim]  /mcp     - Connect to MCP server[/dim]
+[dim]  /mcp     - Connect to MCP server (e.g., /mcp @modelcontextprotocol/server-github)[/dim]
 """
 
 
-def run() -> None:
-    """Run the chatbot in the terminal."""
+async def run_async() -> None:
+    """Run the chatbot asynchronously."""
     console.print(BANNER)
 
     bot = ChatBot()
 
     while True:
         try:
-            # Get user input
-            user_input = console.input("[bold green]You:[/bold green] ").strip()
+            # Get user input (run in executor to avoid blocking)
+            user_input = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: console.input("[bold green]You:[/bold green] ").strip()
+            )
 
             # Handle empty input
             if not user_input:
@@ -82,8 +84,8 @@ def run() -> None:
                                 console.print("[dim]Using GITHUB_TOKEN from environment[/dim]")
                             else:
                                 console.print("[yellow]Warning: GITHUB_TOKEN not set[/yellow]")
-                        
-                        tools = asyncio.run(bot.connect_mcp_server(server_script, env=env))
+
+                        tools = await bot.connect_mcp_server(server_script, env=env)
                         console.print(f"[green]Connected! Added {len(tools)} tools:[/green]")
                         for name in tools:
                             console.print(f"  • [cyan]{name}[/cyan]")
@@ -96,7 +98,7 @@ def run() -> None:
 
             # Get response from bot
             with console.status("[dim]Thinking...[/dim]"):
-                response = bot.send(user_input)
+                response = await bot.send(user_input)
 
             # Display response as markdown
             console.print()
@@ -108,6 +110,11 @@ def run() -> None:
             break
         except Exception as e:
             console.print(f"[red]Error: {e}[/red]")
+
+
+def run() -> None:
+    """Run the chatbot in the terminal."""
+    asyncio.run(run_async())
 
 
 if __name__ == "__main__":

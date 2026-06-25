@@ -1,6 +1,5 @@
 """Core chat loop — where the magic happens."""
 
-import asyncio
 import json
 
 from chatbot.config import Config
@@ -62,7 +61,9 @@ class ChatBot:
         self.tool_registry.register(file_reader_tool)
         self.tool_registry.register(file_writer_tool)
 
-    async def connect_mcp_server(self, server_script: str, env: dict[str, str] | None = None) -> list[str]:
+    async def connect_mcp_server(
+        self, server_script: str, env: dict[str, str] | None = None
+    ) -> list[str]:
         """Connect to an MCP server and add its tools.
 
         Args:
@@ -81,7 +82,7 @@ class ChatBot:
         definitions.extend(self.mcp_client.get_definitions())
         return definitions
 
-    def _execute_tool(self, name: str, arguments: dict) -> str:
+    async def _execute_tool(self, name: str, arguments: dict) -> str:
         """Execute a tool (built-in or MCP).
 
         Args:
@@ -94,29 +95,16 @@ class ChatBot:
         # Check if it's an MCP tool
         mcp_tool = self.mcp_client.get_tool(name)
         if mcp_tool:
-            # MCP tools are async, so we need to run them
+            # MCP tools are async - execute directly
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're already in an async context, need to handle differently
-                    import concurrent.futures
-
-                    with concurrent.futures.ThreadPoolExecutor() as pool:
-                        future = pool.submit(
-                            asyncio.run,
-                            self.mcp_client.execute_tool(name, arguments),
-                        )
-                        result = future.result(timeout=30)
-                        return str(result)
-                else:
-                    return loop.run_until_complete(self.mcp_client.execute_tool(name, arguments))
+                return await self.mcp_client.execute_tool(name, arguments)
             except Exception as e:
                 return f"Error executing MCP tool: {e}"
 
         # Otherwise, use built-in tool registry
         return str(self.tool_registry.execute(name, arguments))
 
-    def send(self, user_message: str) -> str:
+    async def send(self, user_message: str) -> str:
         """Process a user message and return the assistant's response.
 
         Handles tool calling loop:
@@ -168,7 +156,7 @@ class ChatBot:
                 for tc in tool_calls:
                     try:
                         arguments = json.loads(tc["arguments"])
-                        result_str = self._execute_tool(tc["name"], arguments)
+                        result_str = await self._execute_tool(tc["name"], arguments)
                     except Exception as e:
                         result_str = f"Error: {e}"
 

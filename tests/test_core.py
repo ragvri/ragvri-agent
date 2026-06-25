@@ -1,5 +1,6 @@
 """Tests for core module (ChatBot)."""
 
+import pytest
 from unittest.mock import patch
 
 from chatbot.config import Config
@@ -37,25 +38,27 @@ class TestChatBotInit:
 class TestChatBotSend:
     """Test the send method."""
 
+    @pytest.mark.asyncio
     @patch("chatbot.core.chat")
-    def test_send_returns_llm_response(self, mock_chat):
+    async def test_send_returns_llm_response(self, mock_chat):
         mock_chat.return_value = {"type": "text", "content": "I am a helpful assistant!"}
 
         config = Config(model="test", api_key="key", base_url="http://test")
         bot = ChatBot(config=config, enable_tools=False)
 
-        response = bot.send("Hello!")
+        response = await bot.send("Hello!")
 
         assert response == "I am a helpful assistant!"
 
+    @pytest.mark.asyncio
     @patch("chatbot.core.chat")
-    def test_send_adds_messages_to_memory(self, mock_chat):
+    async def test_send_adds_messages_to_memory(self, mock_chat):
         mock_chat.return_value = {"type": "text", "content": "Response"}
 
         config = Config(model="test", api_key="key", base_url="http://test")
         bot = ChatBot(config=config, enable_tools=False)
 
-        bot.send("Hello!")
+        await bot.send("Hello!")
 
         messages = bot.memory.get_messages()
         # Should have: system, user, assistant
@@ -65,15 +68,16 @@ class TestChatBotSend:
         assert messages[2]["role"] == "assistant"
         assert messages[2]["content"] == "Response"
 
+    @pytest.mark.asyncio
     @patch("chatbot.core.chat")
-    def test_send_conversational_flow(self, mock_chat):
+    async def test_send_conversational_flow(self, mock_chat):
         mock_chat.return_value = {"type": "text", "content": "Second response"}
 
         config = Config(model="test", api_key="key", base_url="http://test")
         bot = ChatBot(config=config, enable_tools=False)
 
-        bot.send("First message")
-        bot.send("Second message")
+        await bot.send("First message")
+        await bot.send("Second message")
 
         # Verify LLM was called twice
         assert mock_chat.call_count == 2
@@ -86,14 +90,15 @@ class TestChatBotSend:
 class TestChatBotReset:
     """Test the reset method."""
 
+    @pytest.mark.asyncio
     @patch("chatbot.core.chat")
-    def test_reset_clears_history(self, mock_chat):
+    async def test_reset_clears_history(self, mock_chat):
         mock_chat.return_value = {"type": "text", "content": "Response"}
 
         config = Config(model="test", api_key="key", base_url="http://test")
         bot = ChatBot(config=config, enable_tools=False)
 
-        bot.send("Hello!")
+        await bot.send("Hello!")
         bot.reset()
 
         messages = bot.memory.get_messages()
@@ -103,8 +108,9 @@ class TestChatBotReset:
 class TestChatBotWithTools:
     """Test ChatBot with tool calling."""
 
+    @pytest.mark.asyncio
     @patch("chatbot.core.chat")
-    def test_executes_tool_and_returns_response(self, mock_chat):
+    async def test_executes_tool_and_returns_response(self, mock_chat):
         # First call: LLM wants to call calculator
         # Second call: LLM gives final response
         mock_chat.side_effect = [
@@ -124,13 +130,14 @@ class TestChatBotWithTools:
         config = Config(model="test", api_key="key", base_url="http://test")
         bot = ChatBot(config=config)
 
-        response = bot.send("What is 2+2?")
+        response = await bot.send("What is 2+2?")
 
         assert response == "2 + 2 = 4"
         assert mock_chat.call_count == 2
 
+    @pytest.mark.asyncio
     @patch("chatbot.core.chat")
-    def test_tool_result_added_to_memory(self, mock_chat):
+    async def test_tool_result_added_to_memory(self, mock_chat):
         mock_chat.side_effect = [
             {
                 "type": "tool_calls",
@@ -148,7 +155,7 @@ class TestChatBotWithTools:
         config = Config(model="test", api_key="key", base_url="http://test")
         bot = ChatBot(config=config)
 
-        bot.send("What is 10*5?")
+        await bot.send("What is 10*5?")
 
         messages = bot.memory.get_messages()
         # system + user + tool_call_assistant + tool_result + final_assistant
