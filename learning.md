@@ -150,4 +150,59 @@ Instead of building every tool ourselves, we can:
 
 ---
 
+## 6. MCP (Model Context Protocol)
+
+MCP is a **standard protocol** for connecting tools to LLMs. Instead of building tools directly into the chatbot, we can connect to external MCP servers that provide tools.
+
+### How MCP Works
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────────┐
+│   Chatbot   │ ──▶ │  MCP Client │ ──▶ │  MCP Server     │
+│  (our app)  │     │             │     │ (npm package)   │
+└─────────────┘     └─────────────┘     └─────────────────┘
+                           │                     │
+                           │  1. Connect (stdio) │
+                           │ ──────────────────▶ │
+                           │                     │
+                           │  2. list_tools      │
+                           │ ──────────────────▶ │
+                           │                     │
+                           │  3. tools list      │
+                           │ ◀────────────────── │
+                           │                     │
+                           │  4. call_tool       │
+                           │ ──────────────────▶ │
+                           │                     │
+                           │  5. result          │
+                           │ ◀────────────────── │
+```
+
+### Key Insights
+
+- MCP uses **async/await** for non-blocking I/O
+- Servers communicate via **stdio** (stdin/stdout)
+- Tools are discovered via `list_tools()` endpoint
+- Tool execution returns `TextContent` objects
+- The protocol **standardizes** tool format across ecosystems
+- npm packages can be MCP servers (e.g., `@modelcontextprotocol/server-github`)
+
+### When to Use MCP vs Built-in Tools
+
+| Use MCP When | Use Built-in When |
+|--------------|-------------------|
+| External services (GitHub, Slack, Jira) | Simple operations (file read, calc) |
+| Sharing tools across apps | Self-contained functionality |
+| Community tools available | Performance critical |
+
+### Real MCP Servers
+
+| Server | Tools | Auth Required |
+|--------|-------|---------------|
+| `@modelcontextprotocol/server-everything` | Test/demo tools | No |
+| `@modelcontextprotocol/server-github` | GitHub API | Yes (token) |
+| `@modelcontextprotocol/server-filesystem` | File operations | No |
+
+---
+
 *Last updated: 2026-06-24*
