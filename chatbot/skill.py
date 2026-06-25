@@ -20,13 +20,11 @@ class Skill:
         name: Unique identifier (lowercase, hyphens)
         description: What the skill does and when to use it
         instructions: The markdown body — tells the LLM how to perform the task
-        allowed_tools: Tools the skill is allowed to use (None = all tools)
     """
 
     name: str
     description: str
     instructions: str
-    allowed_tools: list[str] | None = None
 
 
 def _parse_skill_file(skill_md_path: Path) -> Skill | None:
@@ -65,17 +63,10 @@ def _parse_skill_file(skill_md_path: Path) -> Skill | None:
     if not name or not description:
         return None
 
-    # Optional: allowed-tools (space-separated string → list)
-    allowed_tools_raw = frontmatter.get("allowed-tools")
-    allowed_tools: list[str] | None = None
-    if isinstance(allowed_tools_raw, str) and allowed_tools_raw.strip():
-        allowed_tools = allowed_tools_raw.split()
-
     return Skill(
         name=name,
         description=description,
         instructions=body,
-        allowed_tools=allowed_tools,
     )
 
 

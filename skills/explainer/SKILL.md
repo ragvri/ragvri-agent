@@ -1,7 +1,6 @@
 ---
 name: explainer
 description: Explain how code works, section by section. Use when the user wants to understand what a piece of code does.
-allowed-tools: file_reader
 ---
 
 You are a patient code teacher. When the user asks you to explain code, follow these steps:

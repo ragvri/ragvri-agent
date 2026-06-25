@@ -4,14 +4,15 @@ import json
 from pathlib import Path
 
 from chatbot.config import Config
-from chatbot.llm import chat
+from chatbot.llm import chat, chat_stream
 from chatbot.mcp_client import MCPClient
 from chatbot.memory import Memory
 from chatbot.skill import Skill, find_skill, load_skills
-from chatbot.tool_registry import ToolRegistry
+from chatbot.tool_registry import Tool, ToolRegistry
 from chatbot.tools.calculator import calculator_tool
 from chatbot.tools.code_executor import python_executor_tool
 from chatbot.tools.datetime_tool import datetime_tool
+from chatbot.tools.fetch_url import fetch_url_tool
 from chatbot.tools.file_ops import file_reader_tool, file_writer_tool
 from chatbot.tools.shell import shell_executor_tool
 
@@ -37,9 +38,11 @@ class ChatBot:
        c. Send back to LLM for final response
     5. If LLM returns text, return it
 
-    When a skill is active:
-    - Skill instructions are prepended to the system prompt
-    - Tools are filtered to only those in the skill's allowed-tools
+    Skills are model-managed:
+    - System prompt includes a catalog of available skills (name + description)
+    - Model calls use_skill(name) to get full instructions for a skill
+    - Instructions are returned as a tool result
+    - Model follows the instructions for that turn
     """
 
     def __init__(
@@ -49,19 +52,47 @@ class ChatBot:
         skills_dir: Path | None = None,
     ):
         self.config = config or Config.from_env()
+        self.skills_dir = skills_dir
+
+        # Load skills from directory
+        self.skills: list[Skill] = load_skills(skills_dir) if skills_dir else []
+
+        # Build system prompt with tool and skill catalogs
+        system_prompt = self._build_system_prompt(self.config.system_prompt)
+
         self.memory = Memory(
-            system_prompt=self.config.system_prompt,
+            system_prompt=system_prompt,
             max_messages=self.config.max_history,
         )
         self.tool_registry = ToolRegistry()
         self.mcp_client = MCPClient()
 
-        # Load skills from directory
-        self.skills: list[Skill] = load_skills(skills_dir) if skills_dir else []
-        self.active_skill: Skill | None = None
-
         if enable_tools:
             self._register_default_tools()
+
+        # Always register use_skill if we have skills
+        if self.skills:
+            self._register_use_skill_tool()
+
+    def _build_system_prompt(self, base_prompt: str) -> str:
+        """Build the full system prompt with tool and skill catalogs."""
+        parts = [base_prompt]
+
+        # Skill catalog
+        if self.skills:
+            parts.append("\n## Available Skills")
+            parts.append(
+                "You have access to the following skills. "
+                "To use a skill, call the `use_skill` tool with the skill name."
+            )
+            parts.append(
+                "The tool will return the full instructions. Follow them for the current task."
+            )
+            parts.append("")
+            for skill in self.skills:
+                parts.append(f"- **{skill.name}**: {skill.description}")
+
+        return "\n".join(parts)
 
     def _register_default_tools(self) -> None:
         """Register the built-in tools."""
@@ -76,6 +107,51 @@ class ChatBot:
         # File operation tools
         self.tool_registry.register(file_reader_tool)
         self.tool_registry.register(file_writer_tool)
+
+        # Web tools
+        self.tool_registry.register(fetch_url_tool)
+
+    def _register_use_skill_tool(self) -> None:
+        """Register the use_skill tool for model-managed skills."""
+
+        def use_skill(name: str) -> str:
+            """Get instructions for a skill by name.
+
+            Args:
+                name: The skill name to use
+
+            Returns:
+                The skill's full instructions, or an error message
+            """
+            skill = find_skill(self.skills, name)
+            if skill is None:
+                available = ", ".join(s.name for s in self.skills)
+                return f"Error: Skill '{name}' not found. Available: {available}"
+            return f"# Skill: {skill.name}\n\n{skill.instructions}"
+
+        skill_names = [s.name for s in self.skills]
+        skills_list = ", ".join(skill_names)
+        self.tool_registry.register(
+            Tool(
+                name="use_skill",
+                description=(
+                    f"Load and follow a skill's instructions. "
+                    f"Available skills: {skills_list}. "
+                    f"Call this when a task matches a skill's purpose."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": f"The skill name to use. Available: {skills_list}",
+                        }
+                    },
+                    "required": ["name"],
+                },
+                function=use_skill,
+            )
+        )
 
     async def connect_mcp_server(
         self, server_script: str, env: dict[str, str] | None = None
@@ -97,6 +173,15 @@ class ChatBot:
         definitions = self.tool_registry.get_definitions()
         definitions.extend(self.mcp_client.get_definitions())
         return definitions
+
+    def get_tool_catalog(self) -> str:
+        """Generate a human-readable tool catalog for the system prompt."""
+        catalog = []
+        for tool in self.tool_registry._tools.values():
+            catalog.append(f"- **{tool.name}**: {tool.description}")
+        for tool in self.mcp_client._tools.values():
+            catalog.append(f"- **{tool.name}** (MCP): {tool.description}")
+        return "\n".join(catalog)
 
     async def _execute_tool(self, name: str, arguments: dict) -> str:
         """Execute a tool (built-in or MCP).
@@ -120,24 +205,19 @@ class ChatBot:
         # Otherwise, use built-in tool registry
         return str(self.tool_registry.execute(name, arguments))
 
-    def activate_skill(self, name: str) -> bool:
-        """Activate a skill by name.
+    def rebuild_system_prompt(self) -> None:
+        """Rebuild the system prompt with current tool and skill catalogs.
 
-        Args:
-            name: Skill name to activate
-
-        Returns:
-            True if skill was found and activated, False otherwise
+        Call this after connecting MCP servers to update available tools.
         """
-        skill = find_skill(self.skills, name)
-        if skill is None:
-            return False
-        self.active_skill = skill
-        return True
+        system_prompt = self._build_system_prompt(self.config.system_prompt)
 
-    def deactivate_skill(self) -> None:
-        """Deactivate the currently active skill."""
-        self.active_skill = None
+        # Rebuild use_skill tool if skills changed
+        if self.skills:
+            self._register_use_skill_tool()
+
+        # Update the system prompt in memory
+        self.memory.messages[0] = {"role": "system", "content": system_prompt}
 
     async def send(self, user_message: str) -> str:
         """Process a user message and return the assistant's response.
@@ -146,44 +226,20 @@ class ChatBot:
         1. Send to LLM with tool definitions
         2. If LLM requests tool calls, execute them and loop
         3. If LLM returns text, return it
-
-        If a skill is active:
-        - Skill instructions are prepended to the system prompt
-        - Tools are filtered to only those in allowed-tools (if specified)
         """
         # Add user message to memory
         self.memory.add("user", user_message)
 
-        # Build messages for the LLM
-        messages = self.memory.get_messages()
-
-        # If a skill is active, prepend its instructions to the system prompt
-        if self.active_skill:
-            messages[0] = {
-                "role": "system",
-                "content": messages[0]["content"] + "\n\n" + self.active_skill.instructions,
-            }
-
         # Get tool definitions (built-in + MCP)
         tools = self.get_all_tool_definitions()
-
-        # If skill specifies allowed-tools, filter to only those
-        if self.active_skill and self.active_skill.allowed_tools:
-            tools = [t for t in tools if t["function"]["name"] in self.active_skill.allowed_tools]
-
         tools = tools or None
 
         # Tool calling loop (max 5 iterations to prevent infinite loops)
         for _ in range(5):
             # Rebuild messages each iteration (memory grows with tool results)
             messages = self.memory.get_messages()
-            if self.active_skill:
-                messages[0] = {
-                    "role": "system",
-                    "content": messages[0]["content"] + "\n\n" + self.active_skill.instructions,
-                }
 
-            response = chat(
+            response = await chat(
                 messages=messages,
                 model=self.config.model,
                 api_key=self.config.api_key,
@@ -229,6 +285,130 @@ class ChatBot:
         # If we get here, we hit the iteration limit
         self.memory.add("assistant", "I'm sorry, I got stuck in a loop trying to use tools.")
         return "I'm sorry, I got stuck in a loop trying to use tools."
+
+    async def send_stream(self, user_message: str):
+        """Process a user message with streaming, yielding events.
+
+        This is the streaming version of send(). It yields dictionaries
+        that describe what's happening in real-time:
+
+        - {"type": "text", "content": "..."} — text chunk
+        - {"type": "tool_start", "name": "tool_name"} — tool call starting
+        - {"type": "tool_end", "name": "tool_name", "result": "..."} — tool done
+        - {"type": "thinking", "content": "..."} — model thinking/reasoning
+        - {"type": "done", "content": "..."} — final complete response
+
+        Args:
+            user_message: The user's message
+
+        Yields:
+            Event dictionaries
+        """
+        # Add user message to memory
+        self.memory.add("user", user_message)
+
+        # Get tool definitions (built-in + MCP)
+        tools = self.get_all_tool_definitions()
+        tools = tools or None
+
+        # Tool calling loop (max 5 iterations to prevent infinite loops)
+        full_response = ""
+
+        for _ in range(5):
+            # Rebuild messages each iteration
+            messages = self.memory.get_messages()
+
+            # Track tool calls for this iteration
+            current_tool_calls: list[dict] = []
+            text_buffer = ""
+
+            # Stream the response
+            async for event in chat_stream(
+                messages=messages,
+                model=self.config.model,
+                api_key=self.config.api_key,
+                base_url=self.config.base_url,
+                tools=tools,
+            ):
+                if event["type"] == "text":
+                    text_buffer += event["content"]
+                    yield {"type": "text", "content": event["content"]}
+
+                elif event["type"] == "tool_call_start":
+                    tool_name = event.get("tool_name", "unknown")
+                    yield {"type": "tool_start", "name": tool_name}
+
+                elif event["type"] == "tool_call_args":
+                    # Accumulate args (not yielded, just tracked)
+                    pass
+
+                elif event["type"] == "tool_call_end":
+                    tool_id = event.get("tool_call_id", "")
+                    tool_name = event.get("tool_name", "unknown")
+                    tool_args = event.get("tool_args", "")
+
+                    current_tool_calls.append(
+                        {
+                            "id": tool_id,
+                            "name": tool_name,
+                            "args": tool_args,
+                        }
+                    )
+
+                elif event["type"] == "usage":
+                    # Pass through usage events
+                    yield event
+
+                elif event["type"] == "thinking":
+                    # Pass through thinking events
+                    yield event
+
+            # After stream ends, check if we have tool calls to execute
+            if current_tool_calls:
+                # Add assistant message with tool calls
+                formatted_tool_calls = [
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": tc["args"],
+                        },
+                    }
+                    for tc in current_tool_calls
+                ]
+                self.memory.add_assistant_with_tool_calls(formatted_tool_calls)
+
+                # Execute each tool
+                for tc in current_tool_calls:
+                    try:
+                        arguments = json.loads(tc["args"])
+                        result_str = await self._execute_tool(tc["name"], arguments)
+                    except Exception as e:
+                        result_str = f"Error: {e}"
+
+                    # Add tool result to memory
+                    self.memory.add_tool_result(tc["id"], result_str)
+                    yield {
+                        "type": "tool_end",
+                        "name": tc["name"],
+                        "result": result_str[:200] + ("..." if len(result_str) > 200 else ""),
+                    }
+
+                # Continue the loop for more tool calls
+                full_response += text_buffer
+                continue
+
+            else:
+                # No tool calls — this is the final response
+                full_response += text_buffer
+                self.memory.add("assistant", full_response)
+                yield {"type": "done", "content": full_response}
+                return
+
+        # If we get here, we hit the iteration limit
+        self.memory.add("assistant", "I'm sorry, I got stuck in a loop trying to use tools.")
+        yield {"type": "done", "content": "I'm sorry, I got stuck in a loop trying to use tools."}
 
     def reset(self) -> None:
         """Clear conversation history."""

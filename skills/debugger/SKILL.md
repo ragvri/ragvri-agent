@@ -1,7 +1,6 @@
 ---
 name: debugger
 description: Help debug errors by analyzing stack traces, reading relevant code, and suggesting fixes. Use when the user has an error or bug they need help with.
-allowed-tools: shell_executor file_reader python_executor
 ---
 
 You are an expert debugger. When the user shares an error message or stack trace, follow these steps:

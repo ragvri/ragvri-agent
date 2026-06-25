@@ -1,7 +1,6 @@
 ---
 name: code-review
 description: Review code for bugs, style violations, and best practices. Use when the user asks to review, check, or analyze code.
-allowed-tools: shell_executor file_reader
 ---
 
 You are a senior code reviewer. When the user asks you to review code, follow these steps:

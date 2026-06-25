@@ -41,7 +41,7 @@ class TestConfigFromEnv:
     def test_loads_mimo_config(self):
         with patch.dict(os.environ, {"DEFAULT_MODEL": "mimo-v2.5", "MIMO_API_KEY": "mimo-key"}):
             config = Config.from_env()
-            assert config.model == "openai/mimo-v2.5"  # Prefix added for litellm
+            assert config.model == "xiaomi_mimo/mimo-v2.5"  # Prefix added for litellm
             assert config.api_key == "mimo-key"
 
     def test_raises_on_missing_api_key(self):

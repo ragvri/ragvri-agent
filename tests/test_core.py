@@ -33,7 +33,39 @@ class TestChatBotInit:
         )
         bot = ChatBot(config=config)
         messages = bot.memory.get_messages()
-        assert messages[0]["content"] == "Test assistant"
+        assert "Test assistant" in messages[0]["content"]
+
+    def test_system_prompt_includes_skill_catalog(self, tmp_path):
+        """System prompt should include skill catalog when skills exist."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: my-skill\ndescription: Test skill\n---\n\nDo stuff.\n"
+        )
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config, skills_dir=tmp_path)
+        messages = bot.memory.get_messages()
+        assert "my-skill" in messages[0]["content"]
+        assert "Test skill" in messages[0]["content"]
+
+    def test_registers_use_skill_tool_when_skills_exist(self, tmp_path):
+        """Should register use_skill tool when skills are loaded."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: my-skill\ndescription: Test skill\n---\n\nDo stuff.\n"
+        )
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config, skills_dir=tmp_path)
+        tool_names = bot.tool_registry.tool_names
+        assert "use_skill" in tool_names
+
+    def test_no_use_skill_tool_without_skills(self):
+        """Should not register use_skill tool when no skills exist."""
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config)
+        tool_names = bot.tool_registry.tool_names
+        assert "use_skill" not in tool_names
 
 
 class TestChatBotSend:
@@ -178,8 +210,8 @@ class TestChatBotMCP:
         config = Config(model="test", api_key="key", base_url="http://test")
         bot = ChatBot(config=config)
         definitions = bot.get_all_tool_definitions()
-        # Should have 6 built-in tools
-        assert len(definitions) >= 6
+        # Should have 7 built-in tools (including fetch_url)
+        assert len(definitions) >= 7
         names = [d["function"]["name"] for d in definitions]
         assert "calculator" in names
         assert "get_current_datetime" in names
@@ -187,10 +219,11 @@ class TestChatBotMCP:
         assert "file_reader" in names
         assert "file_writer" in names
         assert "shell_executor" in names
+        assert "fetch_url" in names
 
 
 class TestChatBotSkills:
-    """Test ChatBot skill integration."""
+    """Test ChatBot skill integration (model-managed)."""
 
     def test_loads_skills_from_directory(self, tmp_path):
         skill_dir = tmp_path / "my-skill"
@@ -203,48 +236,16 @@ class TestChatBotSkills:
         assert len(bot.skills) == 1
         assert bot.skills[0].name == "my-skill"
 
-    def test_starts_with_no_active_skill(self):
+    def test_has_no_active_skill(self):
+        """Skills are model-managed, no active_skill attribute."""
         config = Config(model="test", api_key="key", base_url="http://test")
         bot = ChatBot(config=config)
-        assert bot.active_skill is None
-
-    def test_activate_skill(self, tmp_path):
-        skill_dir = tmp_path / "my-skill"
-        skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(
-            "---\nname: my-skill\ndescription: Test skill\n---\n\nDo stuff.\n"
-        )
-        config = Config(model="test", api_key="key", base_url="http://test")
-        bot = ChatBot(config=config, skills_dir=tmp_path)
-        result = bot.activate_skill("my-skill")
-        assert result is True
-        assert bot.active_skill is not None
-        assert bot.active_skill.name == "my-skill"
-
-    def test_activate_nonexistent_skill(self):
-        config = Config(model="test", api_key="key", base_url="http://test")
-        bot = ChatBot(config=config)
-        result = bot.activate_skill("nonexistent")
-        assert result is False
-        assert bot.active_skill is None
-
-    def test_deactivate_skill(self, tmp_path):
-        skill_dir = tmp_path / "my-skill"
-        skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(
-            "---\nname: my-skill\ndescription: Test skill\n---\n\nDo stuff.\n"
-        )
-        config = Config(model="test", api_key="key", base_url="http://test")
-        bot = ChatBot(config=config, skills_dir=tmp_path)
-        bot.activate_skill("my-skill")
-        bot.deactivate_skill()
-        assert bot.active_skill is None
+        assert not hasattr(bot, "active_skill")
 
     @pytest.mark.asyncio
     @patch("chatbot.core.chat")
-    async def test_skill_prepends_instructions_to_system_prompt(self, mock_chat, tmp_path):
-        mock_chat.return_value = {"type": "text", "content": "Done"}
-
+    async def test_use_skill_tool_returns_instructions(self, mock_chat, tmp_path):
+        """Model can call use_skill to get skill instructions."""
         skill_dir = tmp_path / "code-review"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -252,20 +253,33 @@ class TestChatBotSkills:
             "You are a senior code reviewer. Follow these steps.\n"
         )
         config = Config(model="test", api_key="key", base_url="http://test")
-        bot = ChatBot(config=config, enable_tools=False, skills_dir=tmp_path)
-        bot.activate_skill("code-review")
+        bot = ChatBot(config=config, skills_dir=tmp_path)
 
-        await bot.send("Review main.py")
-
-        # Check the messages sent to the LLM
-        call_args = mock_chat.call_args
-        messages = call_args.kwargs["messages"] or call_args[1]["messages"]
-        system_msg = messages[0]["content"]
-        assert "senior code reviewer" in system_msg
+        # Model calls use_skill
+        result = bot.tool_registry.execute("use_skill", {"name": "code-review"})
+        assert "senior code reviewer" in result
+        assert "Follow these steps" in result
 
     @pytest.mark.asyncio
     @patch("chatbot.core.chat")
-    async def test_skill_filters_tools_by_allowed_tools(self, mock_chat, tmp_path):
+    async def test_use_skill_returns_error_for_unknown_skill(self, mock_chat, tmp_path):
+        """use_skill returns helpful error for unknown skill name."""
+        skill_dir = tmp_path / "code-review"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: code-review\ndescription: Review code\n---\n\nReview.\n"
+        )
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config, skills_dir=tmp_path)
+
+        result = bot.tool_registry.execute("use_skill", {"name": "nonexistent"})
+        assert "not found" in result
+        assert "code-review" in result
+
+    @pytest.mark.asyncio
+    @patch("chatbot.core.chat")
+    async def test_all_tools_available_no_filtering(self, mock_chat, tmp_path):
+        """All tools are always available — no hard filtering by skills."""
         mock_chat.return_value = {"type": "text", "content": "Done"}
 
         skill_dir = tmp_path / "code-review"
@@ -277,17 +291,39 @@ class TestChatBotSkills:
         )
         config = Config(model="test", api_key="key", base_url="http://test")
         bot = ChatBot(config=config, skills_dir=tmp_path)
-        bot.activate_skill("code-review")
 
         await bot.send("Review main.py")
 
         call_args = mock_chat.call_args
         tools = call_args.kwargs.get("tools") or call_args[1].get("tools")
         tool_names = [t["function"]["name"] for t in tools]
+        # All tools should be available (no filtering)
         assert "shell_executor" in tool_names
         assert "file_reader" in tool_names
-        # calculator should NOT be in the filtered list
-        assert "calculator" not in tool_names
+        assert "calculator" in tool_names
+        assert "use_skill" in tool_names
+
+    @pytest.mark.asyncio
+    @patch("chatbot.core.chat")
+    async def test_skill_catalog_in_system_prompt(self, mock_chat, tmp_path):
+        """Skill catalog should be in the system prompt."""
+        mock_chat.return_value = {"type": "text", "content": "Done"}
+
+        skill_dir = tmp_path / "code-review"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: code-review\ndescription: Review code\n---\n\nReview.\n"
+        )
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config, skills_dir=tmp_path)
+
+        await bot.send("Hello")
+
+        call_args = mock_chat.call_args
+        messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
+        system_msg = messages[0]["content"]
+        assert "code-review" in system_msg
+        assert "Review code" in system_msg
 
     @pytest.mark.asyncio
     @patch("chatbot.core.chat")
@@ -319,7 +355,6 @@ class TestChatBotSkills:
         )
         config = Config(model="test", api_key="key", base_url="http://test")
         bot = ChatBot(config=config, skills_dir=tmp_path)
-        bot.activate_skill("general")
 
         await bot.send("Hello")
 

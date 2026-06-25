@@ -32,23 +32,6 @@ class TestSkillDataclass:
         )
         assert skill.instructions == "Do the thing."
 
-    def test_skill_allowed_tools_defaults_to_none(self):
-        skill = Skill(
-            name="test-skill",
-            description="A test skill",
-            instructions="Do the thing.",
-        )
-        assert skill.allowed_tools is None
-
-    def test_skill_with_allowed_tools(self):
-        skill = Skill(
-            name="test-skill",
-            description="A test skill",
-            instructions="Do the thing.",
-            allowed_tools=["shell_executor", "file_reader"],
-        )
-        assert skill.allowed_tools == ["shell_executor", "file_reader"]
-
 
 class TestLoadSkills:
     """Test loading skills from a directory."""
@@ -82,7 +65,8 @@ class TestLoadSkills:
         names = {s.name for s in skills}
         assert names == {"skill-a", "skill-b"}
 
-    def test_parses_allowed_tools(self, tmp_path: Path):
+    def test_ignores_allowed_tools_field(self, tmp_path: Path):
+        """allowed-tools in frontmatter is parsed but not stored."""
         skill_dir = tmp_path / "code-review"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -95,16 +79,9 @@ class TestLoadSkills:
             "Review the code.\n"
         )
         skills = load_skills(tmp_path)
-        assert skills[0].allowed_tools == ["shell_executor", "file_reader"]
-
-    def test_allowed_tools_none_when_not_specified(self, tmp_path: Path):
-        skill_dir = tmp_path / "general"
-        skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(
-            "---\nname: general\ndescription: General purpose\n---\n\nDo stuff.\n"
-        )
-        skills = load_skills(tmp_path)
-        assert skills[0].allowed_tools is None
+        assert skills[0].name == "code-review"
+        assert skills[0].description == "Review code"
+        assert skills[0].instructions == "Review the code."
 
     def test_ignores_non_skill_directories(self, tmp_path: Path):
         # A directory without SKILL.md should be skipped
