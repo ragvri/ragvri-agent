@@ -1,9 +1,11 @@
 """Core chat loop — where the magic happens."""
 
+import asyncio
 import json
 
 from chatbot.config import Config
 from chatbot.llm import chat
+from chatbot.mcp_client import MCPClient
 from chatbot.memory import Memory
 from chatbot.tool_registry import ToolRegistry
 from chatbot.tools.calculator import calculator_tool
@@ -21,13 +23,14 @@ class ChatBot:
     - Memory (conversation history)
     - LLM (the brain)
     - Tools (the hands)
+    - MCP Client (external tools via MCP protocol)
 
     The flow with tools:
     1. User sends a message
     2. We add it to memory
     3. We send the full history + tools to the LLM
     4. If LLM wants to call tools:
-       a. Execute each tool
+       a. Execute each tool (built-in or MCP)
        b. Add tool results to memory
        c. Send back to LLM for final response
     5. If LLM returns text, return it
@@ -40,6 +43,7 @@ class ChatBot:
             max_messages=self.config.max_history,
         )
         self.tool_registry = ToolRegistry()
+        self.mcp_client = MCPClient()
 
         if enable_tools:
             self._register_default_tools()
@@ -58,6 +62,61 @@ class ChatBot:
         self.tool_registry.register(file_reader_tool)
         self.tool_registry.register(file_writer_tool)
 
+    async def connect_mcp_server(self, server_script: str) -> list[str]:
+        """Connect to an MCP server and add its tools.
+
+        Args:
+            server_script: Path to the MCP server script
+
+        Returns:
+            List of tool names added from the server
+        """
+        await self.mcp_client.connect_to_server(server_script)
+        return self.mcp_client.tool_names
+
+    def get_all_tool_definitions(self) -> list[dict]:
+        """Get tool definitions from both built-in and MCP tools."""
+        definitions = self.tool_registry.get_definitions()
+        definitions.extend(self.mcp_client.get_definitions())
+        return definitions
+
+    def _execute_tool(self, name: str, arguments: dict) -> str:
+        """Execute a tool (built-in or MCP).
+
+        Args:
+            name: Tool name
+            arguments: Tool arguments
+
+        Returns:
+            Tool execution result as string
+        """
+        # Check if it's an MCP tool
+        mcp_tool = self.mcp_client.get_tool(name)
+        if mcp_tool:
+            # MCP tools are async, so we need to run them
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # We're already in an async context, need to handle differently
+                    # For now, create a new event loop in a thread
+                    import concurrent.futures
+
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        future = pool.submit(
+                            asyncio.run, self.mcp_client._execute_mcp_tool(name, arguments)
+                        )
+                        result = future.result(timeout=30)
+                        return str(result)
+                else:
+                    return loop.run_until_complete(
+                        self.mcp_client._execute_mcp_tool(name, arguments)
+                    )
+            except Exception as e:
+                return f"Error executing MCP tool: {e}"
+
+        # Otherwise, use built-in tool registry
+        return str(self.tool_registry.execute(name, arguments))
+
     def send(self, user_message: str) -> str:
         """Process a user message and return the assistant's response.
 
@@ -69,8 +128,8 @@ class ChatBot:
         # Add user message to memory
         self.memory.add("user", user_message)
 
-        # Get tool definitions if tools are enabled
-        tools = self.tool_registry.get_definitions() if self.tool_registry.tool_names else None
+        # Get tool definitions (built-in + MCP)
+        tools = self.get_all_tool_definitions() or None
 
         # Tool calling loop (max 5 iterations to prevent infinite loops)
         for _ in range(5):
@@ -110,8 +169,7 @@ class ChatBot:
                 for tc in tool_calls:
                     try:
                         arguments = json.loads(tc["arguments"])
-                        result = self.tool_registry.execute(tc["name"], arguments)
-                        result_str = str(result)
+                        result_str = self._execute_tool(tc["name"], arguments)
                     except Exception as e:
                         result_str = f"Error: {e}"
 

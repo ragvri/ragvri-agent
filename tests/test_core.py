@@ -155,3 +155,27 @@ class TestChatBotWithTools:
         assert len(messages) == 5
         assert messages[2]["role"] == "assistant"  # tool call
         assert messages[3]["role"] == "tool"  # tool result
+
+
+class TestChatBotMCP:
+    """Test ChatBot MCP integration."""
+
+    def test_has_mcp_client(self):
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config)
+        assert bot.mcp_client is not None
+        assert not bot.mcp_client.is_connected
+
+    def test_get_all_tool_definitions_includes_built_in(self):
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config)
+        definitions = bot.get_all_tool_definitions()
+        # Should have 6 built-in tools
+        assert len(definitions) >= 6
+        names = [d["function"]["name"] for d in definitions]
+        assert "calculator" in names
+        assert "get_current_datetime" in names
+        assert "python_executor" in names
+        assert "file_reader" in names
+        assert "file_writer" in names
+        assert "shell_executor" in names
