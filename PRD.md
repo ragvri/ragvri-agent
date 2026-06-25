@@ -173,10 +173,17 @@ Write tests **first**, watch them fail, then write the minimum code to make them
 - Tool invocation via protocol
 
 **Success criteria:**
-- [ ] All tests pass
-- [ ] Can connect to MCP servers
-- [ ] Tools are discovered automatically
-- [ ] Works with existing MCP ecosystem
+- [x] All tests pass (76 total)
+- [x] Can connect to MCP servers
+- [x] Tools are discovered automatically
+- [x] Works with existing MCP ecosystem
+
+**Key learnings:**
+- MCP uses async/await for non-blocking I/O
+- Client connects to server via stdio (stdin/stdout)
+- Tools are discovered via `list_tools()` endpoint
+- Tool execution returns `TextContent` objects
+- Protocol standardizes tool format across ecosystems
 
 ---
 
