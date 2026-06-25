@@ -1,7 +1,8 @@
 """Tests for core module (ChatBot)."""
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from chatbot.config import Config
 from chatbot.core import ChatBot
@@ -186,3 +187,145 @@ class TestChatBotMCP:
         assert "file_reader" in names
         assert "file_writer" in names
         assert "shell_executor" in names
+
+
+class TestChatBotSkills:
+    """Test ChatBot skill integration."""
+
+    def test_loads_skills_from_directory(self, tmp_path):
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: my-skill\ndescription: Test skill\n---\n\nDo stuff.\n"
+        )
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config, skills_dir=tmp_path)
+        assert len(bot.skills) == 1
+        assert bot.skills[0].name == "my-skill"
+
+    def test_starts_with_no_active_skill(self):
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config)
+        assert bot.active_skill is None
+
+    def test_activate_skill(self, tmp_path):
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: my-skill\ndescription: Test skill\n---\n\nDo stuff.\n"
+        )
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config, skills_dir=tmp_path)
+        result = bot.activate_skill("my-skill")
+        assert result is True
+        assert bot.active_skill is not None
+        assert bot.active_skill.name == "my-skill"
+
+    def test_activate_nonexistent_skill(self):
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config)
+        result = bot.activate_skill("nonexistent")
+        assert result is False
+        assert bot.active_skill is None
+
+    def test_deactivate_skill(self, tmp_path):
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: my-skill\ndescription: Test skill\n---\n\nDo stuff.\n"
+        )
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config, skills_dir=tmp_path)
+        bot.activate_skill("my-skill")
+        bot.deactivate_skill()
+        assert bot.active_skill is None
+
+    @pytest.mark.asyncio
+    @patch("chatbot.core.chat")
+    async def test_skill_prepends_instructions_to_system_prompt(self, mock_chat, tmp_path):
+        mock_chat.return_value = {"type": "text", "content": "Done"}
+
+        skill_dir = tmp_path / "code-review"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: code-review\ndescription: Review code\n---\n\n"
+            "You are a senior code reviewer. Follow these steps.\n"
+        )
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config, enable_tools=False, skills_dir=tmp_path)
+        bot.activate_skill("code-review")
+
+        await bot.send("Review main.py")
+
+        # Check the messages sent to the LLM
+        call_args = mock_chat.call_args
+        messages = call_args.kwargs["messages"] or call_args[1]["messages"]
+        system_msg = messages[0]["content"]
+        assert "senior code reviewer" in system_msg
+
+    @pytest.mark.asyncio
+    @patch("chatbot.core.chat")
+    async def test_skill_filters_tools_by_allowed_tools(self, mock_chat, tmp_path):
+        mock_chat.return_value = {"type": "text", "content": "Done"}
+
+        skill_dir = tmp_path / "code-review"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: code-review\ndescription: Review code\n"
+            "allowed-tools: shell_executor file_reader\n---\n\n"
+            "Review the code.\n"
+        )
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config, skills_dir=tmp_path)
+        bot.activate_skill("code-review")
+
+        await bot.send("Review main.py")
+
+        call_args = mock_chat.call_args
+        tools = call_args.kwargs.get("tools") or call_args[1].get("tools")
+        tool_names = [t["function"]["name"] for t in tools]
+        assert "shell_executor" in tool_names
+        assert "file_reader" in tool_names
+        # calculator should NOT be in the filtered list
+        assert "calculator" not in tool_names
+
+    @pytest.mark.asyncio
+    @patch("chatbot.core.chat")
+    async def test_no_skill_keeps_all_tools(self, mock_chat):
+        mock_chat.return_value = {"type": "text", "content": "Done"}
+
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config)
+
+        await bot.send("What is 2+2?")
+
+        call_args = mock_chat.call_args
+        tools = call_args.kwargs.get("tools") or call_args[1].get("tools")
+        tool_names = [t["function"]["name"] for t in tools]
+        # All tools should be available
+        assert "calculator" in tool_names
+        assert "shell_executor" in tool_names
+        assert "file_reader" in tool_names
+
+    @pytest.mark.asyncio
+    @patch("chatbot.core.chat")
+    async def test_skill_without_allowed_tools_keeps_all_tools(self, mock_chat, tmp_path):
+        mock_chat.return_value = {"type": "text", "content": "Done"}
+
+        skill_dir = tmp_path / "general"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: general\ndescription: General purpose\n---\n\nDo stuff.\n"
+        )
+        config = Config(model="test", api_key="key", base_url="http://test")
+        bot = ChatBot(config=config, skills_dir=tmp_path)
+        bot.activate_skill("general")
+
+        await bot.send("Hello")
+
+        call_args = mock_chat.call_args
+        tools = call_args.kwargs.get("tools") or call_args[1].get("tools")
+        tool_names = [t["function"]["name"] for t in tools]
+        # All tools should be available (no allowed-tools restriction)
+        assert "calculator" in tool_names
+        assert "shell_executor" in tool_names

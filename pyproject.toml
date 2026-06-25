@@ -8,6 +8,7 @@ dependencies = [
     "litellm",
     "mcp>=1.0.0",
     "python-dotenv",
+    "pyyaml",
     "rich",
 ]
 
@@ -42,6 +43,7 @@ known-first-party = ["chatbot"]
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.0.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
 ]

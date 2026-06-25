@@ -1,0 +1,11 @@
+# Pre-commit hooks for the chatbot project.
+# Install: uv run pre-commit install
+# Run all: uv run pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.0
+    hooks:
+      - id: ruff        # lint
+        args: [--fix]
+      - id: ruff-format # format

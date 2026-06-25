@@ -1,11 +1,13 @@
 """Core chat loop — where the magic happens."""
 
 import json
+from pathlib import Path
 
 from chatbot.config import Config
 from chatbot.llm import chat
 from chatbot.mcp_client import MCPClient
 from chatbot.memory import Memory
+from chatbot.skill import Skill, find_skill, load_skills
 from chatbot.tool_registry import ToolRegistry
 from chatbot.tools.calculator import calculator_tool
 from chatbot.tools.code_executor import python_executor_tool
@@ -23,6 +25,7 @@ class ChatBot:
     - LLM (the brain)
     - Tools (the hands)
     - MCP Client (external tools via MCP protocol)
+    - Skills (specialized task modes via Agent Skills)
 
     The flow with tools:
     1. User sends a message
@@ -33,9 +36,18 @@ class ChatBot:
        b. Add tool results to memory
        c. Send back to LLM for final response
     5. If LLM returns text, return it
+
+    When a skill is active:
+    - Skill instructions are prepended to the system prompt
+    - Tools are filtered to only those in the skill's allowed-tools
     """
 
-    def __init__(self, config: Config | None = None, enable_tools: bool = True):
+    def __init__(
+        self,
+        config: Config | None = None,
+        enable_tools: bool = True,
+        skills_dir: Path | None = None,
+    ):
         self.config = config or Config.from_env()
         self.memory = Memory(
             system_prompt=self.config.system_prompt,
@@ -43,6 +55,10 @@ class ChatBot:
         )
         self.tool_registry = ToolRegistry()
         self.mcp_client = MCPClient()
+
+        # Load skills from directory
+        self.skills: list[Skill] = load_skills(skills_dir) if skills_dir else []
+        self.active_skill: Skill | None = None
 
         if enable_tools:
             self._register_default_tools()
@@ -104,6 +120,25 @@ class ChatBot:
         # Otherwise, use built-in tool registry
         return str(self.tool_registry.execute(name, arguments))
 
+    def activate_skill(self, name: str) -> bool:
+        """Activate a skill by name.
+
+        Args:
+            name: Skill name to activate
+
+        Returns:
+            True if skill was found and activated, False otherwise
+        """
+        skill = find_skill(self.skills, name)
+        if skill is None:
+            return False
+        self.active_skill = skill
+        return True
+
+    def deactivate_skill(self) -> None:
+        """Deactivate the currently active skill."""
+        self.active_skill = None
+
     async def send(self, user_message: str) -> str:
         """Process a user message and return the assistant's response.
 
@@ -111,17 +146,45 @@ class ChatBot:
         1. Send to LLM with tool definitions
         2. If LLM requests tool calls, execute them and loop
         3. If LLM returns text, return it
+
+        If a skill is active:
+        - Skill instructions are prepended to the system prompt
+        - Tools are filtered to only those in allowed-tools (if specified)
         """
         # Add user message to memory
         self.memory.add("user", user_message)
 
+        # Build messages for the LLM
+        messages = self.memory.get_messages()
+
+        # If a skill is active, prepend its instructions to the system prompt
+        if self.active_skill:
+            messages[0] = {
+                "role": "system",
+                "content": messages[0]["content"] + "\n\n" + self.active_skill.instructions,
+            }
+
         # Get tool definitions (built-in + MCP)
-        tools = self.get_all_tool_definitions() or None
+        tools = self.get_all_tool_definitions()
+
+        # If skill specifies allowed-tools, filter to only those
+        if self.active_skill and self.active_skill.allowed_tools:
+            tools = [t for t in tools if t["function"]["name"] in self.active_skill.allowed_tools]
+
+        tools = tools or None
 
         # Tool calling loop (max 5 iterations to prevent infinite loops)
         for _ in range(5):
+            # Rebuild messages each iteration (memory grows with tool results)
+            messages = self.memory.get_messages()
+            if self.active_skill:
+                messages[0] = {
+                    "role": "system",
+                    "content": messages[0]["content"] + "\n\n" + self.active_skill.instructions,
+                }
+
             response = chat(
-                messages=self.memory.get_messages(),
+                messages=messages,
                 model=self.config.model,
                 api_key=self.config.api_key,
                 base_url=self.config.base_url,
