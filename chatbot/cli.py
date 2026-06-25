@@ -1,6 +1,7 @@
 """Terminal user interface for the chatbot."""
 
 import asyncio
+import os
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -72,7 +73,17 @@ def run() -> None:
                     server_script = parts[1]
                     console.print(f"[dim]Connecting to MCP server: {server_script}...[/dim]")
                     try:
-                        tools = asyncio.run(bot.connect_mcp_server(server_script))
+                        # Pass environment variables for known servers
+                        env = None
+                        if "github" in server_script.lower():
+                            github_token = os.environ.get("GITHUB_TOKEN")
+                            if github_token:
+                                env = {"GITHUB_TOKEN": github_token}
+                                console.print("[dim]Using GITHUB_TOKEN from environment[/dim]")
+                            else:
+                                console.print("[yellow]Warning: GITHUB_TOKEN not set[/yellow]")
+                        
+                        tools = asyncio.run(bot.connect_mcp_server(server_script, env=env))
                         console.print(f"[green]Connected! Added {len(tools)} tools:[/green]")
                         for name in tools:
                             console.print(f"  • [cyan]{name}[/cyan]")

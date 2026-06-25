@@ -62,16 +62,17 @@ class ChatBot:
         self.tool_registry.register(file_reader_tool)
         self.tool_registry.register(file_writer_tool)
 
-    async def connect_mcp_server(self, server_script: str) -> list[str]:
+    async def connect_mcp_server(self, server_script: str, env: dict[str, str] | None = None) -> list[str]:
         """Connect to an MCP server and add its tools.
 
         Args:
             server_script: Path to the MCP server script
+            env: Optional environment variables for the server
 
         Returns:
             List of tool names added from the server
         """
-        await self.mcp_client.connect_to_server(server_script)
+        await self.mcp_client.connect_to_server(server_script, env=env)
         return self.mcp_client.tool_names
 
     def get_all_tool_definitions(self) -> list[dict]:
