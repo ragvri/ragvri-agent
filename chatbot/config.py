@@ -16,7 +16,11 @@ class Config:
     base_url: str = "https://api.deepseek.com"
 
     # Chat settings
-    system_prompt: str = "You are a helpful AI assistant."
+    system_prompt: str = (
+        "You are an expert coding assistant. "
+        "You help users by reading files, executing commands, "
+        "editing code, and writing new files."
+    )
     max_history: int = 50
 
     # Token tracking

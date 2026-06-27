@@ -76,12 +76,22 @@ class ChatBot:
             self._register_use_skill_tool()
 
     def _build_system_prompt(self, base_prompt: str) -> str:
-        """Build the full system prompt with tool and skill catalogs."""
+        """Build the full system prompt with guidelines, skills, and context."""
+        from datetime import date
+
         parts = [base_prompt]
+
+        # Guidelines (matching pi's approach)
+        parts.append("")
+        parts.append("Guidelines:")
+        parts.append("- Use the shell tool for file operations like ls, find, grep")
+        parts.append("- Be concise in your responses")
+        parts.append("- Show file paths clearly when working with files")
 
         # Skill catalog
         if self.skills:
-            parts.append("\n## Available Skills")
+            parts.append("")
+            parts.append("## Available Skills")
             parts.append(
                 "You have access to the following skills. "
                 "To use a skill, call the `use_skill` tool with the skill name."
@@ -92,6 +102,13 @@ class ChatBot:
             parts.append("")
             for skill in self.skills:
                 parts.append(f"- **{skill.name}**: {skill.description}")
+
+        # Date and working directory (like pi)
+        today = date.today().isoformat()
+        cwd = Path.cwd().as_posix()
+        parts.append("")
+        parts.append(f"Current date: {today}")
+        parts.append(f"Current working directory: {cwd}")
 
         return "\n".join(parts)
 

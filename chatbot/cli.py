@@ -50,6 +50,57 @@ class StatusBar:
         """Update the current action."""
         self.current_action = action
 
+    def _shorten_path(self, path: str, max_length: int = 30) -> str:
+        """Intelligently shorten a path for display.
+
+        Shows the last directory name and trims the middle with ellipsis.
+        Examples:
+            /home/user/projects/my-app/src/components/utils -> .../src/components/utils
+            /Users/john/very/long/path/to/project           -> .../to/project
+            ~/Documents/work/project                        -> ~/Documents/work/project
+            /short/path                                      -> /short/path
+        """
+        if len(path) <= max_length:
+            return path
+
+        # Split the path into parts
+        parts = Path(path).parts
+
+        # If very few parts, just truncate with ellipsis
+        if len(parts) <= 2:
+            return "..." + path[-(max_length - 3) :]
+
+        # Determine prefix based on path type
+        if path.startswith("~"):
+            prefix = "~/..."
+        elif path.startswith("/"):
+            prefix = ".../"
+        else:
+            prefix = "..."
+
+        # Available space after prefix
+        available = max_length - len(prefix)
+
+        # Keep the last N directories that fit within available space
+        kept_parts = []
+        current_len = 0
+        for part in reversed(parts):
+            # Calculate additional length if we add this part
+            # Need separator between parts if not first
+            add_len = len(part) + (1 if kept_parts else 0)
+
+            if current_len + add_len > available:
+                break
+            kept_parts.insert(0, part)
+            current_len += add_len
+
+        if kept_parts:
+            shortened = "/".join(kept_parts)
+            return prefix + shortened
+        else:
+            # Fallback: just show the end with ellipsis
+            return "..." + path[-(max_length - 3) :]
+
     def render(self) -> Table:
         """Render the status bar as a Rich Table."""
         table = Table(
@@ -64,10 +115,8 @@ class StatusBar:
         table.add_column(style="yellow", ratio=1)
         table.add_column(style="magenta", ratio=1)
 
-        # Shorten cwd for display
-        display_cwd = self.cwd
-        if len(display_cwd) > 30:
-            display_cwd = "..." + display_cwd[-27:]
+        # Shorten cwd for display using intelligent path shortening
+        display_cwd = self._shorten_path(self.cwd, max_length=32)
 
         # Format token display
         token_pct = (self.tokens_used / self.context_window * 100) if self.context_window else 0

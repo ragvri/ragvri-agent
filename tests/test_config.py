@@ -21,7 +21,7 @@ class TestConfigDefaults:
 
     def test_default_system_prompt(self):
         config = Config()
-        assert "helpful" in config.system_prompt.lower()
+        assert "coding assistant" in config.system_prompt.lower()
 
 
 class TestConfigFromEnv:
