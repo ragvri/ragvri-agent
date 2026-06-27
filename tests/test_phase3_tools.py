@@ -4,7 +4,7 @@ import os
 import tempfile
 
 from chatbot.tools.code_executor import python_executor_tool
-from chatbot.tools.file_ops import file_reader_tool, file_writer_tool
+from chatbot.tools.file_ops import file_editor_tool, file_reader_tool, file_writer_tool
 from chatbot.tools.shell import shell_executor_tool
 
 
@@ -106,6 +106,86 @@ class TestFileWriter:
             assert file_writer_tool.function is not None
             file_writer_tool.function(path, "content")
             assert os.path.exists(path)
+
+
+class TestFileEditor:
+    """Test file editing (targeted replacement)."""
+
+    def test_edit_simple_replacement(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write("Hello, World!")
+            temp_path = f.name
+
+        try:
+            assert file_editor_tool.function is not None
+            result = file_editor_tool.function(temp_path, "World", "Python")
+            assert "success" in result.lower() or "edited" in result.lower()
+            with open(temp_path) as f:
+                assert f.read() == "Hello, Python!"
+        finally:
+            os.unlink(temp_path)
+
+    def test_edit_multiline_replacement(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write("def foo():\n    return 1\n")
+            temp_path = f.name
+
+        try:
+            old = "def foo():\n    return 1"
+            new = "def bar():\n    return 42"
+            assert file_editor_tool.function is not None
+            file_editor_tool.function(temp_path, old, new)
+            with open(temp_path) as f:
+                content = f.read()
+            assert "def bar()" in content
+            assert "return 42" in content
+        finally:
+            os.unlink(temp_path)
+
+    def test_edit_nonexistent_file(self):
+        assert file_editor_tool.function is not None
+        result = file_editor_tool.function("/nonexistent/file.txt", "old", "new")
+        assert "Error" in result
+
+    def test_edit_text_not_found(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write("Hello, World!")
+            temp_path = f.name
+
+        try:
+            assert file_editor_tool.function is not None
+            result = file_editor_tool.function(temp_path, "not in file", "replacement")
+            assert "Error" in result
+            assert "not found" in result.lower()
+        finally:
+            os.unlink(temp_path)
+
+    def test_edit_text_not_unique(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write("foo and foo")
+            temp_path = f.name
+
+        try:
+            assert file_editor_tool.function is not None
+            result = file_editor_tool.function(temp_path, "foo", "bar")
+            assert "Error" in result
+            assert "2 times" in result or "appears" in result
+        finally:
+            os.unlink(temp_path)
+
+    def test_edit_only_first_occurrence(self):
+        """When text is unique, only that one occurrence is replaced."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write("alpha beta gamma")
+            temp_path = f.name
+
+        try:
+            assert file_editor_tool.function is not None
+            file_editor_tool.function(temp_path, "beta", "BETA")
+            with open(temp_path) as f:
+                assert f.read() == "alpha BETA gamma"
+        finally:
+            os.unlink(temp_path)
 
 
 class TestShellExecutor:

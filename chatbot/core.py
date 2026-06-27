@@ -13,7 +13,7 @@ from chatbot.tools.calculator import calculator_tool
 from chatbot.tools.code_executor import python_executor_tool
 from chatbot.tools.datetime_tool import datetime_tool
 from chatbot.tools.fetch_url import fetch_url_tool
-from chatbot.tools.file_ops import file_reader_tool, file_writer_tool
+from chatbot.tools.file_ops import file_editor_tool, file_reader_tool, file_writer_tool
 from chatbot.tools.shell import shell_executor_tool
 
 
@@ -108,6 +108,7 @@ class ChatBot:
         # File operation tools
         self.tool_registry.register(file_reader_tool)
         self.tool_registry.register(file_writer_tool)
+        self.tool_registry.register(file_editor_tool)
 
         # Web tools
         self.tool_registry.register(fetch_url_tool)

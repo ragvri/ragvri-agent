@@ -218,6 +218,7 @@ class TestChatBotMCP:
         assert "python_executor" in names
         assert "file_reader" in names
         assert "file_writer" in names
+        assert "file_editor" in names
         assert "shell_executor" in names
         assert "fetch_url" in names
 
