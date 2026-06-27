@@ -58,13 +58,7 @@ class ChatBot:
         # Load skills from directory
         self.skills: list[Skill] = load_skills(skills_dir) if skills_dir else []
 
-        # Build system prompt with tool and skill catalogs
-        system_prompt = self._build_system_prompt(self.config.system_prompt)
-
-        self.memory = Memory(
-            system_prompt=system_prompt,
-            max_messages=self.config.max_history,
-        )
+        # Set up tools first (system prompt needs tool catalog)
         self.tool_registry = ToolRegistry()
         self.mcp_client = MCPClient()
 
@@ -75,11 +69,31 @@ class ChatBot:
         if self.skills:
             self._register_use_skill_tool()
 
+        # Build system prompt with tool and skill catalogs
+        system_prompt = self._build_system_prompt(self.config.system_prompt)
+
+        self.memory = Memory(
+            system_prompt=system_prompt,
+            max_messages=self.config.max_history,
+        )
+
     def _build_system_prompt(self, base_prompt: str) -> str:
-        """Build the full system prompt with guidelines, skills, and context."""
+        """Build the full system prompt with tools, guidelines, skills, and context."""
         from datetime import date
 
         parts = [base_prompt]
+
+        # Tool descriptions (like pi — tells the model what it can do)
+        tool_catalog = self.get_tool_catalog()
+        if tool_catalog:
+            parts.append("")
+            parts.append("Available tools:")
+            parts.append(tool_catalog)
+            parts.append("")
+            parts.append(
+                "In addition to the tools above, you may have access to "
+                "other custom tools via MCP servers."
+            )
 
         # Guidelines (matching pi's approach)
         parts.append("")
