@@ -22,15 +22,20 @@ A fully functional agentic chatbot in Python with:
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| Basic chat | ✅ | LLM integration via litellm (Mimo/DeepSeek) |
+| Basic chat | ✅ | LLM integration via litellm (MiMo/DeepSeek) |
 | Tool calling | ✅ | LLM can request tool calls, we execute and return results |
 | Built-in tools | ✅ | Calculator, datetime, Python executor, file read/write, shell |
+| Internet access | ✅ | `fetch_url` tool — fetches web pages via curl |
 | MCP integration | ✅ | Connect to external MCP servers (GitHub server working!) |
-| Skills system | ✅ | Agent Skills standard (agentskills.io) — prompt + tools bundles |
+| Skills system | ✅ | Model-managed skills (no activate/deactivate) |
+| Streaming | ✅ | Real-time token-by-token output via litellm acompletion |
+| Thinking tokens | ✅ | Shows model reasoning in dimmed panel above response |
+| Status bar | ✅ | Model, directory, tokens used/available, current action |
+| Dynamic model info | ✅ | Auto-discovers context window from litellm/API/defaults |
 | Pre-commit hooks | ✅ | Ruff lint + format on every commit |
 | Learning journal | ✅ | Documented learnings in `learning.md` |
 
-### Test Status: 113 passing
+### Test Status: 132 passing
 
 ---
 
@@ -39,12 +44,12 @@ A fully functional agentic chatbot in Python with:
 | Component | Choice | Why |
 |-----------|--------|-----|
 | Language | Python 3.11+ | User proficiency |
-| LLM library | litellm | Provider-agnostic (works with Mimo, DeepSeek, OpenAI) |
-| LLM provider | Mimo (mimo-v2.5) | User's primary provider |
+| LLM library | litellm | Provider-agnostic (works with MiMo, DeepSeek, OpenAI) |
+| LLM provider | MiMo v2.5 (xiaomi_mimo) | User's primary provider — 1M context window |
 | Package manager | uv | Fast, modern |
 | Linter | ruff | Replaces flake8+black+isort |
 | Type checker | ty | From Astral (ruff creators) |
-| Terminal UI | rich | Beautiful CLI output |
+| Terminal UI | rich | Beautiful CLI output — Panel, Live, Group, Markdown, Table |
 | MCP SDK | mcp (official) | Standard protocol |
 | YAML parsing | pyyaml | For skill frontmatter |
 | Pre-commit | pre-commit | Automated code quality |
@@ -58,10 +63,10 @@ A fully functional agentic chatbot in Python with:
 ├── chatbot/
 │   ├── __init__.py
 │   ├── __main__.py          # Entry point
-│   ├── cli.py               # Terminal UI (async) + handle_command()
-│   ├── config.py            # Settings, API keys from .env
-│   ├── core.py              # ChatBot orchestrator (async)
-│   ├── llm.py               # litellm wrapper with TypedDict
+│   ├── cli.py               # Terminal UI (async) + streaming + status bar
+│   ├── config.py            # Settings, API keys, dynamic model info
+│   ├── core.py              # ChatBot orchestrator (async, send + send_stream)
+│   ├── llm.py               # litellm wrapper — chat() + chat_stream()
 │   ├── mcp_client.py        # MCP protocol client
 │   ├── memory.py            # Conversation history
 │   ├── skill.py             # Skill dataclass + load_skills() + find_skill()
@@ -70,6 +75,7 @@ A fully functional agentic chatbot in Python with:
 │       ├── calculator.py    # Math expressions
 │       ├── code_executor.py # Python code execution
 │       ├── datetime_tool.py # Current date/time
+│       ├── fetch_url.py     # Web page fetching (curl + HTML stripping)
 │       ├── file_ops.py      # File read/write
 │       ├── mcp_test_server.py # Example MCP server
 │       └── shell.py         # Shell commands
@@ -82,7 +88,7 @@ A fully functional agentic chatbot in Python with:
 │   │   └── SKILL.md
 │   └── explainer/
 │       └── SKILL.md
-├── tests/                   # 113 tests passing
+├── tests/                   # 132 tests passing
 ├── learning.md              # User's learning journal
 ├── PRD.md                   # Product requirements document
 ├── README.md
@@ -93,7 +99,7 @@ A fully functional agentic chatbot in Python with:
 
 ---
 
-## 🔑 Key Learnings (from learning.md)
+## 🔑 Key Learnings
 
 ### 1. Chat Agent = While Loop + Message History
 The LLM is stateless. We maintain a Python list of messages and send the full history each time.
@@ -114,12 +120,48 @@ MCP tools get registered as local tools in our registry. The LLM doesn't know th
 ### 5. Async Event Loop Issue
 MCP sessions are bound to a specific event loop. Can't use them across different loops/threads. Solution: make the entire ChatBot async.
 
-### 6. Skills — Ephemeral Application
-The most important design pattern: **the system prompt in memory is never modified.** When `send()` runs, it copies memory, prepends skill instructions to the copy, sends to LLM, then discards the copy. This means:
-- Deactivation is just `self.active_skill = None` — nothing to undo
-- Multiple skills can be swapped without corrupting memory
-- The base personality is always preserved
-- This is the standard approach (pi, Claude Code, Agent Skills spec)
+### 6. Model-Managed Skills (New Pattern)
+The most important design pattern from this session: **skills are model-managed, not user-activated.**
+
+How it works:
+- System prompt includes a catalog of available skills (name + description)
+- Model decides when to use a skill → calls `use_skill(name)` tool
+- Tool returns full SKILL.md instructions as a tool result
+- Model follows those instructions for that turn
+- No `/activate` or `/deactivate` needed
+
+This is how modern coding agents (pi, Claude Code) work — the model decides what skills to use, not the user.
+
+### 7. Streaming Architecture
+Events flow through a translation layer:
+
+```
+LLM (delta.tool_calls, delta.content)
+  → chat_stream (yields raw events: tool_call_start, text, thinking, usage)
+    → send_stream (renames to: tool_start, text, thinking, usage)
+      → CLI (updates status bar, renders Live display)
+```
+
+Key insight: **update data → re-render**. `status.set_action()` changes the string, `live.update()` redraws the screen.
+
+### 8. Rich Live + Group Pattern
+For persistent status bar with streaming content:
+- `Group(content_panel, status_bar)` stacks renderables vertically
+- `Live` context redraws the group on every `live.update()` call
+- Status bar always visible at bottom, content streams above it
+
+### 9. Token Usage in Streaming
+Most providers don't include usage in streaming chunks. Solutions:
+- `stream_options={"include_usage": True}` forces some providers to include it
+- Fallback: check `response.usage` after stream ends
+- Some providers (like MiMo) only report usage in the final chunk
+
+### 10. Thinking/Reasoning Tokens
+Models that support "deep thinking" (MiMo v2.5, DeepSeek-R1) return reasoning in:
+- `delta.reasoning_content` (DeepSeek format)
+- `delta.thinking` (other providers)
+
+We check both fields and yield `{"type": "thinking", "content": ...}` events.
 
 ---
 
@@ -157,15 +199,11 @@ You: Search for github/github-mcp-server
 ## 📋 Git History
 
 ```
+08d0a69 feat: Modern agent architecture - streaming, thinking, status bar
+3fbc5e6 feat: Phase 5 - Skills system (Agent Skills standard)
+c803538 docs: Add session handoff document
 d07241e fix: MCP tool execution - async event loop issue
 f2f6f5f feat: Support environment variables for MCP servers
-9acc92e docs: Update learning journal with MCP transparency insight
-6ceb190 refactor: Make Tool.function optional for MCP tools
-c9b8da9 docs: Update learning journal with MCP details
-9a8108e (dropped) fix: MCP tool execution - run async in new thread
-a3e234c (dropped) fix: Improve CLI async handling for MCP
-845e39d feat: Add filesystem MCP server
-db5bb9b feat: Phase 4 - MCP Integration
 ...
 2d59632 feat: Phase 1 - Tracer Bullet (Basic Chat)
 ```
@@ -174,23 +212,8 @@ db5bb9b feat: Phase 4 - MCP Integration
 
 ## 🚀 Future Work
 
-### Phase 5: Polish & Enhancements (Partially Complete)
-- [x] Skills system (Agent Skills standard)
-- [x] Pre-commit hooks (ruff lint + format)
-- [ ] Streaming responses (real-time output)
-- [ ] Persistent memory (SQLite/vector store)
-- [ ] Configuration files (YAML/TOML)
-- [ ] Better error handling
-- [ ] Rate limiting for API calls
-
-### Skills Enhancements
-- [ ] Auto-discover skills from project and user directories (pi-style)
-- [ ] Model-activated skills (LLM decides when to use a skill, not just slash commands)
-- [ ] Skill descriptions in system prompt catalog (for model discovery)
-- [ ] `/skills` command to show descriptions and active state
-- [ ] More skills: refactor, test-writer, documentation
-
 ### Potential Enhancements
+- [ ] Persistent memory (SQLite/vector store)
 - [ ] Add more MCP servers (Brave Search, PostgreSQL)
 - [ ] Implement RAG (retrieval-augmented generation)
 - [ ] Add conversation export/import
@@ -208,16 +231,15 @@ db5bb9b feat: Phase 4 - MCP Integration
 
 1. **Run the chatbot:**
    ```bash
-   export GITHUB_TOKEN=<your-token>
+   export MIMO_API_KEY=<your-key>
    uv run python -m chatbot
    ```
 
 2. **Try the skills:**
    ```
    You: /skills
-   You: /activate code-review
+   You: /skill code-review
    You: Review chatbot/skill.py
-   You: /deactivate
    ```
 
 3. **Connect to GitHub MCP:**
@@ -226,15 +248,21 @@ db5bb9b feat: Phase 4 - MCP Integration
    You: Search for popular Python repos
    ```
 
-4. **Read the learning journal:**
+4. **Test streaming and thinking:**
+   ```
+   You: Explain how async/await works in Python
+   (Watch the thinking panel appear above the response)
+   ```
+
+5. **Read the learning journal:**
    - `learning.md` — All key learnings documented
 
-5. **Run tests:**
+6. **Run tests:**
    ```bash
    uv run pytest -v
    ```
 
-6. **Check code quality:**
+7. **Check code quality:**
    ```bash
    uv run ruff check .
    uv run ty check .
@@ -250,17 +278,19 @@ db5bb9b feat: Phase 4 - MCP Integration
 | TDD | Tests first | Understand behavior before coding |
 | litellm | Provider-agnostic | Works with any LLM |
 | Async ChatBot | Full async | MCP tools need same event loop |
-| Tool.function optional | None for MCP | MCP tools execute via protocol |
-| Skills format | Agent Skills standard (agentskills.io) | Same format as pi, Claude Code |
-| Skills storage | Project-root `skills/` directory | User-facing content, not source code |
-| Skill architecture | Functions + dataclass, no manager class | Simple, testable, follows KISS |
-| System prompt | Ephemeral application (copy, don't modify) | Enables clean deactivation |
-| allowed-tools | Filter tools, not just restrict LLM | LLM can't see tools it can't use |
-| Pre-commit | ruff lint + format | Same tool in two contexts (auto + agent) |
+| Model-managed skills | use_skill() tool | Modern agent pattern (pi, Claude Code) |
+| Skills catalog in system prompt | Auto-generated | Model sees all skills, decides what to use |
+| No activate/deactivate | Model decides | Cleaner UX, matches modern agents |
+| Streaming | acompletion + stream=True | Real-time output |
+| Thinking tokens | Persist above response | User sees model reasoning |
+| Status bar | Rich Group + Live | Persistent, updates in real-time |
+| drop_params + allowed_openai_params | Force tools through | MiMo supports tools but litellm doesn't know |
+| Dynamic model info | litellm DB → API → defaults | Correct context window for any provider |
+| fetch_url | curl + HTML stripping | Simple internet access |
 
 ---
 
 *Document created: 2026-06-24*
 *Last updated: 2026-06-25*
-*Total commits: 15+*
-*Tests passing: 113*
+*Total commits: 16*
+*Tests passing: 132*
