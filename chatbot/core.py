@@ -35,7 +35,8 @@ class ChatBot:
     4. If LLM wants to call tools:
        a. Execute each tool (built-in or MCP)
        b. Add tool results to memory
-       c. Send back to LLM for final response
+       c. Send back to LLM
+       d. Loop back to step 3 (no hard cap — LLM decides when done)
     5. If LLM returns text, return it
 
     Skills are model-managed:
@@ -226,6 +227,10 @@ class ChatBot:
         1. Send to LLM with tool definitions
         2. If LLM requests tool calls, execute them and loop
         3. If LLM returns text, return it
+
+        The loop has no hard iteration cap — the LLM decides when it's
+        done calling tools and returns text instead. This matches how
+        real coding agents (pi, Claude Code) work.
         """
         # Add user message to memory
         self.memory.add("user", user_message)
@@ -234,8 +239,8 @@ class ChatBot:
         tools = self.get_all_tool_definitions()
         tools = tools or None
 
-        # Tool calling loop (max 5 iterations to prevent infinite loops)
-        for _ in range(5):
+        # Tool calling loop — no hard cap, LLM decides when to stop
+        while True:
             # Rebuild messages each iteration (memory grows with tool results)
             messages = self.memory.get_messages()
 
@@ -248,7 +253,7 @@ class ChatBot:
             )
 
             if response["type"] == "text":
-                # Regular text response - we're done
+                # Regular text response - LLM is done, we're done
                 self.memory.add("assistant", response["content"])
                 return response["content"]
 
@@ -282,10 +287,6 @@ class ChatBot:
                     # Add tool result to memory with tool_call_id
                     self.memory.add_tool_result(tc["id"], result_str)
 
-        # If we get here, we hit the iteration limit
-        self.memory.add("assistant", "I'm sorry, I got stuck in a loop trying to use tools.")
-        return "I'm sorry, I got stuck in a loop trying to use tools."
-
     async def send_stream(self, user_message: str):
         """Process a user message with streaming, yielding events.
 
@@ -311,10 +312,10 @@ class ChatBot:
         tools = self.get_all_tool_definitions()
         tools = tools or None
 
-        # Tool calling loop (max 5 iterations to prevent infinite loops)
+        # Tool calling loop — no hard cap, LLM decides when to stop
         full_response = ""
 
-        for _ in range(5):
+        while True:
             # Rebuild messages each iteration
             messages = self.memory.get_messages()
 
@@ -405,10 +406,6 @@ class ChatBot:
                 self.memory.add("assistant", full_response)
                 yield {"type": "done", "content": full_response}
                 return
-
-        # If we get here, we hit the iteration limit
-        self.memory.add("assistant", "I'm sorry, I got stuck in a loop trying to use tools.")
-        yield {"type": "done", "content": "I'm sorry, I got stuck in a loop trying to use tools."}
 
     def reset(self) -> None:
         """Clear conversation history."""
