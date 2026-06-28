@@ -334,6 +334,7 @@ class ChatBot:
 
         # Tool calling loop — no hard cap, LLM decides when to stop
         full_response = ""
+        last_usage: dict | None = None
 
         while True:
             # Rebuild messages each iteration
@@ -377,8 +378,10 @@ class ChatBot:
                     )
 
                 elif event["type"] == "usage":
-                    # Pass through usage events
-                    yield event
+                    # Track latest usage, don't yield yet
+                    # (each iteration re-sends history, so only the
+                    # last usage reflects actual context size)
+                    last_usage = event
 
                 elif event["type"] == "thinking":
                     # Pass through thinking events
@@ -424,6 +427,9 @@ class ChatBot:
                 # No tool calls — this is the final response
                 full_response += text_buffer
                 self.memory.add("assistant", full_response)
+                # Yield the last usage event (actual context size)
+                if last_usage:
+                    yield last_usage
                 yield {"type": "done", "content": full_response}
                 return
 
