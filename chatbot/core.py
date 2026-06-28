@@ -78,22 +78,10 @@ class ChatBot:
         )
 
     def _build_system_prompt(self, base_prompt: str) -> str:
-        """Build the full system prompt with tools, guidelines, skills, and context."""
+        """Build the full system prompt with skills, guidelines, and context."""
         from datetime import date
 
         parts = [base_prompt]
-
-        # Tool descriptions (like pi — tells the model what it can do)
-        tool_catalog = self.get_tool_catalog()
-        if tool_catalog:
-            parts.append("")
-            parts.append("Available tools:")
-            parts.append(tool_catalog)
-            parts.append("")
-            parts.append(
-                "In addition to the tools above, you may have access to "
-                "other custom tools via MCP servers."
-            )
 
         # Guidelines (matching pi's approach)
         parts.append("")
